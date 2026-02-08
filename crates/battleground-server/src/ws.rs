@@ -6,6 +6,7 @@ use axum::{
         State, WebSocketUpgrade,
     },
     response::IntoResponse,
+    Router,
 };
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -392,6 +393,15 @@ async fn handle_binary_message(
     Ok(())
 }
 
+/// Build the application router for testing and production use.
+pub fn build_app(state: Arc<AppState>) -> Router<()> {
+    Router::new()
+        .route("/ws", axum::routing::get(ws_handler))
+        .route("/health", axum::routing::get(|| async { "ok" }))
+        .layer(tower_http::cors::CorsLayer::permissive())
+        .with_state(state)
+}
+
 /// Resolve the current turn and broadcast results to all players.
 async fn resolve_and_broadcast(
     room: &mut crate::room::Room,
@@ -430,4 +440,201 @@ async fn resolve_and_broadcast(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ServerConfig;
+    use crate::protocol::{ClientMessage, RoomConfig, ServerMessage, PROTOCOL_VERSION};
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::{connect_async, tungstenite::Message as TsMsg};
+
+    /// Start a test server on an ephemeral port. Returns the WS URL.
+    async fn start_test_server() -> String {
+        let config = ServerConfig {
+            port: 0, // ephemeral
+            max_rooms: 10,
+            log_level: "error".to_string(),
+            turn_timer_ms: 30_000,
+        };
+        let state = Arc::new(AppState::new(config));
+        let app = build_app(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        format!("ws://127.0.0.1:{}/ws", addr.port())
+    }
+
+    fn encode_client(msg: &ClientMessage) -> Vec<u8> {
+        let mut bytes = vec![PROTOCOL_VERSION];
+        bytes.extend(bincode::serialize(msg).expect("serialize"));
+        bytes
+    }
+
+    fn decode_server(bytes: &[u8]) -> ServerMessage {
+        assert!(!bytes.is_empty(), "empty server message");
+        assert_eq!(bytes[0], PROTOCOL_VERSION, "wrong protocol version");
+        bincode::deserialize(&bytes[1..]).expect("deserialize server message")
+    }
+
+    #[tokio::test]
+    async fn ws_ping_pong() {
+        let url = start_test_server().await;
+        let (mut ws, _) = connect_async(&url).await.expect("connect");
+
+        let ping = encode_client(&ClientMessage::Ping);
+        ws.send(TsMsg::Binary(ping.into())).await.expect("send");
+
+        let resp = ws.next().await.expect("response").expect("ok");
+        match resp {
+            TsMsg::Binary(bytes) => {
+                let msg = decode_server(&bytes);
+                assert!(matches!(msg, ServerMessage::Pong));
+            }
+            other => panic!("Expected binary, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ws_create_room() {
+        let url = start_test_server().await;
+        let (mut ws, _) = connect_async(&url).await.expect("connect");
+
+        let create = encode_client(&ClientMessage::CreateRoom {
+            player_name: "Alice".to_string(),
+            config: RoomConfig::default(),
+        });
+        ws.send(TsMsg::Binary(create.into())).await.expect("send");
+
+        // Should get RoomCreated and RoomJoined
+        let resp1 = ws.next().await.expect("resp1").expect("ok");
+        let resp2 = ws.next().await.expect("resp2").expect("ok");
+
+        let msg1 = decode_server(resp1.into_data().as_ref());
+        let msg2 = decode_server(resp2.into_data().as_ref());
+
+        assert!(matches!(msg1, ServerMessage::RoomCreated { .. }));
+        assert!(matches!(msg2, ServerMessage::RoomJoined { .. }));
+    }
+
+    #[tokio::test]
+    async fn ws_two_players_join_and_ready() {
+        let url = start_test_server().await;
+
+        // Player 1: create room
+        let (mut ws1, _) = connect_async(&url).await.expect("connect p1");
+        let create = encode_client(&ClientMessage::CreateRoom {
+            player_name: "Alice".to_string(),
+            config: RoomConfig::default(),
+        });
+        ws1.send(TsMsg::Binary(create.into())).await.expect("send");
+
+        // Get room ID
+        let resp = ws1.next().await.expect("resp").expect("ok");
+        let msg = decode_server(resp.into_data().as_ref());
+        let room_id = match msg {
+            ServerMessage::RoomCreated { room_id } => room_id,
+            other => panic!("Expected RoomCreated, got {other:?}"),
+        };
+        // Consume RoomJoined
+        let _ = ws1.next().await;
+
+        // Player 2: join room
+        let (mut ws2, _) = connect_async(&url).await.expect("connect p2");
+        let join = encode_client(&ClientMessage::JoinRoom {
+            room_id: room_id.clone(),
+            player_name: "Bob".to_string(),
+        });
+        ws2.send(TsMsg::Binary(join.into())).await.expect("send");
+
+        // P2 should get RoomJoined
+        let p2_resp = ws2.next().await.expect("p2 resp").expect("ok");
+        let p2_msg = decode_server(p2_resp.into_data().as_ref());
+        let mut got_room_joined = matches!(p2_msg, ServerMessage::RoomJoined { .. });
+        if !got_room_joined {
+            let p2_resp2 = ws2.next().await.expect("p2 resp2").expect("ok");
+            let p2_msg2 = decode_server(p2_resp2.into_data().as_ref());
+            got_room_joined = matches!(p2_msg2, ServerMessage::RoomJoined { .. });
+        }
+        assert!(got_room_joined, "P2 should receive RoomJoined");
+
+        // Both ready up
+        let ready = encode_client(&ClientMessage::SetReady);
+        ws1.send(TsMsg::Binary(ready.clone().into()))
+            .await
+            .expect("send ready p1");
+        ws2.send(TsMsg::Binary(ready.into()))
+            .await
+            .expect("send ready p2");
+
+        // Drain messages until we see GameStarted
+        let mut got_game_started = false;
+        for _ in 0..10 {
+            tokio::select! {
+                Some(Ok(msg)) = ws1.next() => {
+                    if let TsMsg::Binary(bytes) = msg {
+                        let decoded = decode_server(&bytes);
+                        if matches!(decoded, ServerMessage::GameStarted { .. }) {
+                            got_game_started = true;
+                            break;
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                    break;
+                }
+            }
+        }
+        assert!(
+            got_game_started,
+            "Game should start after both players ready"
+        );
+    }
+
+    #[tokio::test]
+    async fn ws_list_rooms() {
+        let url = start_test_server().await;
+        let (mut ws, _) = connect_async(&url).await.expect("connect");
+
+        // List rooms (should be empty)
+        let list = encode_client(&ClientMessage::ListRooms);
+        ws.send(TsMsg::Binary(list.into())).await.expect("send");
+
+        let resp = ws.next().await.expect("resp").expect("ok");
+        let msg = decode_server(resp.into_data().as_ref());
+        match msg {
+            ServerMessage::RoomList { rooms } => {
+                assert!(rooms.is_empty(), "Should have no rooms initially");
+            }
+            other => panic!("Expected RoomList, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ws_protocol_version_mismatch() {
+        let url = start_test_server().await;
+        let (mut ws, _) = connect_async(&url).await.expect("connect");
+
+        // Send message with wrong protocol version
+        let msg = ClientMessage::Ping;
+        let mut bytes = vec![99u8]; // wrong version
+        bytes.extend(bincode::serialize(&msg).expect("serialize"));
+        ws.send(TsMsg::Binary(bytes.into())).await.expect("send");
+
+        let resp = ws.next().await.expect("resp").expect("ok");
+        let decoded = decode_server(resp.into_data().as_ref());
+        match decoded {
+            ServerMessage::Error { message } => {
+                assert!(
+                    message.contains("protocol version mismatch"),
+                    "Expected version mismatch error, got: {message}"
+                );
+            }
+            other => panic!("Expected Error, got {other:?}"),
+        }
+    }
 }

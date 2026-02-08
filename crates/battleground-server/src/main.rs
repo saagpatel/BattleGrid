@@ -11,10 +11,8 @@ mod ws;
 
 use std::sync::Arc;
 
-use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 use tokio::signal;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use config::ServerConfig;
@@ -38,12 +36,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let state = Arc::new(AppState::new(config));
-
-    let app = Router::new()
-        .route("/ws", get(ws::ws_handler))
-        .route("/health", get(health_check))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+    let app = ws::build_app(state);
 
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on {addr}");
@@ -54,10 +47,6 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Server shut down gracefully");
     Ok(())
-}
-
-async fn health_check() -> &'static str {
-    "ok"
 }
 
 async fn shutdown_signal() {

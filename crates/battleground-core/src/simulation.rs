@@ -644,6 +644,9 @@ fn check_win_conditions(state: &mut GameState, events: &mut Vec<SimEvent>) {
 mod tests {
     use super::*;
     use crate::order::UnitOrder;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use std::time::Instant;
 
     fn test_state() -> GameState {
         let grid = HexGrid::new(5);
@@ -1116,5 +1119,222 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    /// Determinism stress test: same setup run 100 times must produce identical results.
+    #[test]
+    fn determinism_stress() {
+        use crate::map_gen::{generate_map, MapGenConfig};
+
+        let config = MapGenConfig::default();
+        let game_config = GameConfig::default();
+
+        // Run 100 trials — each trial generates orders from a seeded RNG,
+        // then verifies running the same simulation twice produces identical state.
+        for trial in 0..100 {
+            let seed = trial * 37 + 7;
+            let grid = generate_map(seed, &config);
+
+            let players = vec![
+                PlayerState {
+                    id: PlayerId(0),
+                    name: "P1".to_string(),
+                    spawn_center: Hex::new(-4, 0),
+                },
+                PlayerState {
+                    id: PlayerId(1),
+                    name: "P2".to_string(),
+                    spawn_center: Hex::new(4, 0),
+                },
+            ];
+
+            // Run 1
+            let mut state1 = GameState::new(grid.clone(), players.clone(), game_config.clone());
+            state1.phase = GamePhase::Planning;
+            state1.turn = 1;
+            // Place units deterministically
+            let mut rng = StdRng::seed_from_u64(seed);
+            place_random_units(&mut state1, &mut rng);
+
+            // Run 2 — identical setup
+            let mut state2 = GameState::new(grid, players, game_config.clone());
+            state2.phase = GamePhase::Planning;
+            state2.turn = 1;
+            let mut rng2 = StdRng::seed_from_u64(seed);
+            place_random_units(&mut state2, &mut rng2);
+
+            // Generate same orders for both
+            let mut rng_orders = StdRng::seed_from_u64(seed + 1000);
+            let orders = generate_random_orders(&state1, &mut rng_orders);
+
+            let mut rng_orders2 = StdRng::seed_from_u64(seed + 1000);
+            let orders2 = generate_random_orders(&state2, &mut rng_orders2);
+
+            let events1 = simulate_turn(&mut state1, &orders);
+            let events2 = simulate_turn(&mut state2, &orders2);
+
+            // Compare unit positions and HP
+            assert_eq!(
+                state1.units.len(),
+                state2.units.len(),
+                "Unit count mismatch at trial {trial}"
+            );
+            for (uid, u1) in &state1.units {
+                let u2 = state2.units.get(uid).expect("Unit missing in run 2");
+                assert_eq!(
+                    u1.position, u2.position,
+                    "Position mismatch for unit {uid:?} at trial {trial}"
+                );
+                assert_eq!(
+                    u1.hp, u2.hp,
+                    "HP mismatch for unit {uid:?} at trial {trial}"
+                );
+            }
+            assert_eq!(
+                events1.len(),
+                events2.len(),
+                "Event count mismatch at trial {trial}"
+            );
+        }
+    }
+
+    /// Performance: simulation of a full setup with many units must be fast.
+    #[test]
+    fn performance_large_simulation() {
+        use crate::map_gen::{generate_map, MapGenConfig};
+
+        let config = MapGenConfig {
+            radius: 9,
+            ..MapGenConfig::default()
+        };
+        let grid = generate_map(42, &config);
+
+        let players = vec![
+            PlayerState {
+                id: PlayerId(0),
+                name: "P1".to_string(),
+                spawn_center: Hex::new(-6, 0),
+            },
+            PlayerState {
+                id: PlayerId(1),
+                name: "P2".to_string(),
+                spawn_center: Hex::new(6, 0),
+            },
+        ];
+
+        let mut state = GameState::new(grid, players, GameConfig::default());
+        state.phase = GamePhase::Planning;
+        state.turn = 1;
+
+        // Place 20 units per player (40 total)
+        let passable: Vec<Hex> = state.grid.passable_hexes();
+        let left: Vec<&Hex> = passable.iter().filter(|h| h.q < -2).collect();
+        let right: Vec<&Hex> = passable.iter().filter(|h| h.q > 2).collect();
+
+        for i in 0..20.min(left.len()) {
+            state.place_unit(UnitType::Soldier, PlayerId(0), *left[i]);
+        }
+        for i in 0..20.min(right.len()) {
+            state.place_unit(UnitType::Soldier, PlayerId(1), *right[i]);
+        }
+
+        // Time the simulation of one turn
+        let start = Instant::now();
+        for _ in 0..10 {
+            if matches!(state.phase, GamePhase::Finished(_)) {
+                break;
+            }
+            simulate_turn(&mut state, &no_orders());
+        }
+        let elapsed = start.elapsed();
+
+        // 10 turns with 40 units should complete in < 100ms (target: <10ms per turn)
+        assert!(
+            elapsed.as_millis() < 1000,
+            "Simulation too slow: {}ms for 10 turns with {} units",
+            elapsed.as_millis(),
+            state.units.len()
+        );
+    }
+
+    // Helper: place random units on a grid
+    fn place_random_units(state: &mut GameState, rng: &mut StdRng) {
+        let passable: Vec<Hex> = state.grid.passable_hexes();
+        let left: Vec<Hex> = passable.iter().filter(|h| h.q < -1).copied().collect();
+        let right: Vec<Hex> = passable.iter().filter(|h| h.q > 1).copied().collect();
+
+        let types = [
+            UnitType::Soldier,
+            UnitType::Archer,
+            UnitType::Scout,
+            UnitType::Knight,
+            UnitType::Healer,
+        ];
+
+        let mut used_left = HashSet::new();
+        let mut used_right = HashSet::new();
+
+        for _ in 0..5.min(left.len()) {
+            let mut hex;
+            loop {
+                hex = left[rng.gen_range(0..left.len())];
+                if !used_left.contains(&hex) {
+                    break;
+                }
+            }
+            used_left.insert(hex);
+            state.place_unit(types[rng.gen_range(0..types.len())], PlayerId(0), hex);
+        }
+        for _ in 0..5.min(right.len()) {
+            let mut hex;
+            loop {
+                hex = right[rng.gen_range(0..right.len())];
+                if !used_right.contains(&hex) {
+                    break;
+                }
+            }
+            used_right.insert(hex);
+            state.place_unit(types[rng.gen_range(0..types.len())], PlayerId(1), hex);
+        }
+    }
+
+    // Helper: generate random orders for all units
+    fn generate_random_orders(
+        state: &GameState,
+        rng: &mut StdRng,
+    ) -> BTreeMap<PlayerId, Vec<UnitOrder>> {
+        let mut all_orders = BTreeMap::new();
+        for player in &state.players {
+            let mut orders = Vec::new();
+            for unit in state.units_for_player(player.id) {
+                let action = match rng.gen_range(0..3) {
+                    0 => Action::Hold,
+                    1 => Action::Defend,
+                    _ => {
+                        // Try to move to a random neighbor
+                        let neighbors = unit.position.neighbors();
+                        let passable: Vec<Hex> = neighbors
+                            .iter()
+                            .filter(|h| state.grid.is_passable(h))
+                            .copied()
+                            .collect();
+                        if passable.is_empty() {
+                            Action::Hold
+                        } else {
+                            let target = passable[rng.gen_range(0..passable.len())];
+                            Action::Move {
+                                path: vec![unit.position, target],
+                            }
+                        }
+                    }
+                };
+                orders.push(UnitOrder {
+                    unit_id: unit.id,
+                    action,
+                });
+            }
+            all_orders.insert(player.id, orders);
+        }
+        all_orders
     }
 }

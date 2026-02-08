@@ -1,0 +1,17 @@
+services:
+  battlegrid:
+    build: .
+    ports:
+      - "8080:3001"
+    environment:
+      - PORT=3001
+      - LOG_LEVEL=info
+      - MAX_ROOMS=100
+      - TURN_TIMER_MS=30000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
