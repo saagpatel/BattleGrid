@@ -14,6 +14,8 @@ bincode = { workspace = true }
 anyhow = { workspace = true }
 uuid = { version = "=1.20.0", features = ["v4"] }
 tracing = "=0.1.41"
-tracing-subscriber = "=0.3.19"
+tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
+thiserror = { workspace = true }
+futures-util = "0.3"
 dashmap = "=6.1.0"
 rand = { workspace = true }
