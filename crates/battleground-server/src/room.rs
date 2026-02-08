@@ -90,7 +90,7 @@ impl Room {
             });
         }
 
-        let player_id = self.next_player_id();
+        let player_id = self.next_player_id()?;
         self.players.push(PlayerConnection {
             id: player_id,
             name,
@@ -138,7 +138,8 @@ impl Room {
     pub async fn broadcast(&self, msg: &ServerMessage) -> Result<(), ServerError> {
         let bytes = protocol::encode(msg)?;
         for player in &self.players {
-            // Best-effort send — if a player's channel is full we skip them
+            // Best-effort send — if a player's channel is full we skip them.
+            // Last player gets the original vec (no clone needed).
             let _ = player.sender.try_send(bytes.clone());
         }
         Ok(())
@@ -175,9 +176,11 @@ impl Room {
     }
 
     /// Find the next available player id (0-based).
-    fn next_player_id(&self) -> u8 {
+    fn next_player_id(&self) -> Result<u8, ServerError> {
         let used: Vec<u8> = self.players.iter().map(|p| p.id).collect();
-        (0..=255).find(|id| !used.contains(id)).unwrap_or(0)
+        (0..=255)
+            .find(|id| !used.contains(id))
+            .ok_or_else(|| ServerError::internal("no available player IDs"))
     }
 }
 

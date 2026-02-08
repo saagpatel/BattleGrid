@@ -162,18 +162,7 @@ export function GameCanvas({
       // 3. Units
       const animEngine = animEngineRef.current;
       if (unitRendererRef.current) {
-        // Build render data with animated positions
-        const renderUnits: UnitRenderData[] = units.map((u) => {
-          const animPos = animEngine?.getUnitPosition(u.id, now);
-          if (animPos) {
-            // Override pixel position for smooth animation
-            // (UnitRenderer reads q, r then calls hexToPixel internally,
-            // but for animated units we need to bypass that.)
-            return u;
-          }
-          return u;
-        });
-        unitRendererRef.current.draw(ctx, renderUnits, selectedUnitId);
+        unitRendererRef.current.draw(ctx, units, selectedUnitId, animEngine, now);
       }
 
       // 4. Animations (attack effects, damage numbers)

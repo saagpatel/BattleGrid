@@ -5,6 +5,7 @@
 
 import { hexToPixel } from './hexMath.js';
 import { PLAYER_COLORS, PLAYER_COLORS_DIM, UNIT_SYMBOLS } from './colors.js';
+import type { AnimationEngine } from './AnimationEngine.js';
 
 export interface UnitRenderData {
   id: number;
@@ -28,10 +29,15 @@ export class UnitRenderer {
     ctx: CanvasRenderingContext2D,
     units: UnitRenderData[],
     selectedUnitId: number | null,
+    animEngine?: AnimationEngine | null,
+    now?: number,
   ): void {
     for (const unit of units) {
       if (unit.hp <= 0) continue;
-      this.drawUnit(ctx, unit, unit.id === selectedUnitId);
+      // Use animated position during move animations, otherwise hex position
+      const animPos =
+        animEngine && now != null ? animEngine.getUnitPosition(unit.id, now) : null;
+      this.drawUnit(ctx, unit, unit.id === selectedUnitId, animPos);
     }
   }
 
@@ -39,8 +45,9 @@ export class UnitRenderer {
     ctx: CanvasRenderingContext2D,
     unit: UnitRenderData,
     isSelected: boolean,
+    animPos?: { x: number; y: number } | null,
   ): void {
-    const { x, y } = hexToPixel(unit.q, unit.r, this.hexSize);
+    const { x, y } = animPos ?? hexToPixel(unit.q, unit.r, this.hexSize);
     const radius = this.hexSize * 0.38;
 
     // Selection ring

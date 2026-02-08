@@ -3,6 +3,7 @@ use crate::grid::{HexGrid, Terrain};
 use crate::hex::Hex;
 use crate::los;
 use crate::order::{Action, UnitOrder};
+use crate::pathfinding;
 use crate::types::{PlayerId, UnitId};
 use crate::unit::{Ability, Unit, UnitType};
 use serde::{Deserialize, Serialize};
@@ -267,10 +268,13 @@ fn validate_orders(
 
         let valid = match action {
             Action::Move { path } => {
-                // Path must start at unit's current position
+                // Path must start at unit's current position, all hexes valid,
+                // each step adjacent, and total cost within movement range.
                 path.first() == Some(&unit.position)
                     && path.len() >= 2
                     && path.iter().all(|h| state.grid.contains(h))
+                    && path.windows(2).all(|w| w[0].distance(&w[1]) == 1)
+                    && pathfinding::path_cost(&state.grid, path) <= unit.movement()
             }
             Action::Attack { target_id } => {
                 if let Some(target) = state.units.get(target_id) {
@@ -367,10 +371,10 @@ fn resolve_movement(
             });
 
             if same_team {
-                // Same team: shortest path wins
+                // Same team: lowest path cost wins (not path length)
                 let winner = contenders
                     .iter()
-                    .min_by_key(|(_, path)| path.len())
+                    .min_by_key(|(_, path)| pathfinding::path_cost(&state.grid, path))
                     .map(|(uid, _)| *uid);
 
                 for (uid, path) in contenders {
@@ -385,7 +389,7 @@ fn resolve_movement(
                 for (uid, _) in contenders {
                     failed_moves.insert(*uid);
                     if let Some(unit) = state.units.get_mut(uid) {
-                        unit.hp -= 1;
+                        unit.hp = (unit.hp - 1).max(0);
                     }
                 }
                 events.push(SimEvent::MovementConflict {
@@ -425,20 +429,20 @@ fn resolve_abilities(
 ) {
     for (&uid, action) in orders {
         if let Action::Ability { target } = action {
-            let unit = match state.units.get(&uid) {
-                Some(u) if u.is_alive() => u.clone(),
+            let (ability, owner, unit_pos, range) = match state.units.get(&uid) {
+                Some(u) if u.is_alive() => (u.stats().ability, u.owner, u.position, u.range()),
                 _ => continue,
             };
 
-            match unit.stats().ability {
+            match ability {
                 Some(Ability::Heal) => {
                     // Heal adjacent friendly unit for 2 HP
                     if let Some(target_unit) = state.units.values().find(|u| {
                         u.position == *target
                             && u.is_alive()
-                            && u.owner == unit.owner
+                            && u.owner == owner
                             && u.id != uid
-                            && unit.position.distance(&u.position) <= 1
+                            && unit_pos.distance(&u.position) <= 1
                     }) {
                         let tid = target_unit.id;
                         let max_hp = target_unit.max_hp;
@@ -457,8 +461,8 @@ fn resolve_abilities(
                 }
                 Some(Ability::Demolish) => {
                     // Destroy forest/fortress at target within range
-                    let dist = unit.position.distance(target);
-                    if dist <= unit.range() {
+                    let dist = unit_pos.distance(target);
+                    if dist <= range {
                         if let Some(terrain) = state.grid.get_terrain(target) {
                             if terrain == Terrain::Forest || terrain == Terrain::Fortress {
                                 state.grid.set_terrain(*target, Terrain::Plains);
@@ -1044,7 +1048,7 @@ mod tests {
                 PlayerId(1),
                 vec![UnitOrder::move_to(
                     u4,
-                    vec![Hex::new(2, 0), Hex::new(1, -1)],
+                    vec![Hex::new(2, 0), Hex::new(2, -1), Hex::new(1, -1)],
                 )],
             );
 

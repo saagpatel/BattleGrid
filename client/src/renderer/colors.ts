@@ -34,14 +34,14 @@ export const PLAYER_COLORS_DIM = [
   '#99661f',
 ];
 
-/** Unit type icon symbols (single char for now, Phase 7 replaces with sprites). */
+/** Unit type icon symbols — keys match client UnitClass values. */
 export const UNIT_SYMBOLS: Record<string, string> = {
-  Scout:   'Sc',
-  Soldier: 'So',
-  Archer:  'Ar',
-  Knight:  'Kn',
-  Healer:  'He',
-  Siege:   'Si',
+  scout:    'Sc',
+  infantry: 'So',
+  archer:   'Ar',
+  cavalry:  'Kn',
+  healer:   'He',
+  siege:    'Si',
 };
 
 export const OVERLAY_COLORS = {

@@ -117,6 +117,21 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     send_task.abort();
 }
 
+/// Validate player name: 1-64 chars, no control characters.
+fn validate_player_name(name: &str) -> Result<(), ServerError> {
+    if name.is_empty() || name.len() > 64 {
+        return Err(ServerError::invalid_message(
+            "player name must be 1-64 characters",
+        ));
+    }
+    if name.chars().any(|c| c.is_control()) {
+        return Err(ServerError::invalid_message(
+            "player name contains invalid characters",
+        ));
+    }
+    Ok(())
+}
+
 async fn handle_binary_message(
     bytes: &[u8],
     state: &Arc<AppState>,
@@ -141,6 +156,7 @@ async fn handle_binary_message(
             player_name,
             config,
         } => {
+            validate_player_name(&player_name)?;
             let room_id = lobby::create_room(state, config)?;
             let mut room =
                 state
@@ -169,6 +185,7 @@ async fn handle_binary_message(
             room_id,
             player_name,
         } => {
+            validate_player_name(&player_name)?;
             let mut room =
                 state
                     .rooms
@@ -194,6 +211,7 @@ async fn handle_binary_message(
         }
 
         ClientMessage::QuickMatch { player_name } => {
+            validate_player_name(&player_name)?;
             let room_id = lobby::quick_match(state)?;
             let mut room =
                 state
@@ -332,7 +350,16 @@ async fn handle_binary_message(
                 .take()
                 .ok_or_else(|| ServerError::internal("game not initialized"))?;
 
-            let all_deployed = game.submit_deployment(player_id, &placements)?;
+            let result = game.submit_deployment(player_id, &placements);
+
+            // Always restore game state before propagating errors
+            let all_deployed = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    room.game = Some(game);
+                    return Err(e);
+                }
+            };
 
             if all_deployed {
                 // Transition to planning phase — notify all players
@@ -379,10 +406,22 @@ async fn handle_binary_message(
                 .take()
                 .ok_or_else(|| ServerError::internal("game not initialized"))?;
 
-            let all_submitted = game.submit_orders(player_id, for_turn, &orders)?;
+            let result = game.submit_orders(player_id, for_turn, &orders);
+
+            // Always restore game state before propagating errors
+            let all_submitted = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    room.game = Some(game);
+                    return Err(e);
+                }
+            };
 
             if all_submitted {
-                resolve_and_broadcast(&mut room, &mut game).await?;
+                if let Err(e) = resolve_and_broadcast(&mut room, &mut game).await {
+                    room.game = Some(game);
+                    return Err(e);
+                }
             }
 
             // Put game back

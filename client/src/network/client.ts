@@ -106,6 +106,11 @@ export function connect(url: string): void {
 
   ws.addEventListener('close', () => {
     const c = useConnectionStore.getState();
+
+    // Ignore close events from a superseded WebSocket (race: old ws closing
+    // after a new connect() call would overwrite the new connection state).
+    if (c.ws !== ws) return;
+
     c.setWs(null);
 
     if (c.status === 'disconnected') return; // intentional disconnect
