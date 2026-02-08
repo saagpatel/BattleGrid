@@ -22,7 +22,6 @@ pub enum ServerError {
     ProtocolVersionMismatch { expected: u8, actual: u8 },
 
     #[error("turn mismatch: expected {expected}, got {actual}")]
-    #[allow(dead_code)] // Used in Phase 3 game logic
     TurnMismatch { expected: u32, actual: u32 },
 
     #[error("internal server error: {0}")]

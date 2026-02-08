@@ -1,9 +1,12 @@
 mod config;
 mod error;
+mod game;
 mod lobby;
 mod protocol;
+mod reconnect;
 mod room;
 mod state;
+mod timer;
 mod ws;
 
 use std::sync::Arc;

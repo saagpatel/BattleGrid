@@ -3,7 +3,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::error::ServerError;
+use crate::game::GameInstance;
 use crate::protocol::{self, RoomConfig, RoomInfo, ServerMessage};
+use crate::reconnect::DisconnectTracker;
 
 /// Status of a game room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,8 +29,12 @@ pub struct Room {
     pub players: Vec<PlayerConnection>,
     pub config: RoomConfig,
     pub status: RoomStatus,
-    #[allow(dead_code)] // Used for room timeout cleanup in Phase 3
+    #[allow(dead_code)] // Used for room timeout cleanup
     pub created_at: Instant,
+    /// Active game instance (set when game starts).
+    pub game: Option<GameInstance>,
+    /// Tracks disconnected players during an active game.
+    pub disconnect_tracker: DisconnectTracker,
 }
 
 impl Room {
@@ -40,7 +46,32 @@ impl Room {
             config,
             status: RoomStatus::Waiting,
             created_at: Instant::now(),
+            game: None,
+            disconnect_tracker: DisconnectTracker::new(),
         }
+    }
+
+    /// Start the game, creating a GameInstance and transitioning to Playing.
+    pub fn start_game(&mut self) -> Result<(), ServerError> {
+        if self.status != RoomStatus::Waiting {
+            return Err(ServerError::invalid_message("room is not in waiting state"));
+        }
+
+        let player_names: Vec<(u8, String)> = self
+            .players
+            .iter()
+            .map(|p| (p.id, p.name.clone()))
+            .collect();
+
+        let game = GameInstance::new(
+            &player_names,
+            self.config.turn_timer_ms,
+            self.config.map_seed,
+        );
+
+        self.game = Some(game);
+        self.status = RoomStatus::Playing;
+        Ok(())
     }
 
     /// Add a player to the room. Returns the assigned player id.
@@ -114,7 +145,6 @@ impl Room {
     }
 
     /// Send a message to a specific player by id.
-    #[allow(dead_code)] // Used in Phase 3 for targeted game messages
     pub async fn send_to(&self, player_id: u8, msg: &ServerMessage) -> Result<(), ServerError> {
         let bytes = protocol::encode(msg)?;
         let player = self

@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::error::ServerError;
+use crate::game::GameInstance;
 use crate::lobby;
 use crate::protocol::{self, ClientMessage, ServerMessage};
 use crate::room::RoomStatus;
@@ -28,6 +29,7 @@ pub async fn ws_handler(
 struct ConnectionState {
     room_id: Option<String>,
     player_name: Option<String>,
+    player_id: Option<u8>,
 }
 
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
@@ -37,6 +39,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let mut conn = ConnectionState {
         room_id: None,
         player_name: None,
+        player_id: None,
     };
 
     // Spawn a task to forward messages from the channel to the WebSocket
@@ -83,17 +86,29 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Cleanup: remove player from room on disconnect
     if let (Some(room_id), Some(player_name)) = (&conn.room_id, &conn.player_name) {
         if let Some(mut room) = state.rooms.get_mut(room_id) {
-            if let Ok(name) = room.leave(player_name) {
-                info!("Player {name} disconnected from room {room_id}");
-                let msg = ServerMessage::PlayerLeft { player_name: name };
-                let _ = room.broadcast(&msg).await;
-            }
+            // If game is active, track disconnect instead of immediately removing
+            if room.status == RoomStatus::Playing {
+                if let Some(pid) = conn.player_id {
+                    room.disconnect_tracker.player_disconnected(pid);
+                    info!("Player {player_name} disconnected from active game in room {room_id}");
+                    let msg = ServerMessage::PlayerLeft {
+                        player_name: player_name.clone(),
+                    };
+                    let _ = room.broadcast(&msg).await;
+                }
+            } else {
+                if let Ok(name) = room.leave(player_name) {
+                    info!("Player {name} disconnected from room {room_id}");
+                    let msg = ServerMessage::PlayerLeft { player_name: name };
+                    let _ = room.broadcast(&msg).await;
+                }
 
-            // Clean up empty rooms
-            if room.players.is_empty() {
-                drop(room);
-                state.rooms.remove(room_id);
-                info!("Removed empty room {room_id}");
+                // Clean up empty rooms
+                if room.players.is_empty() {
+                    drop(room);
+                    state.rooms.remove(room_id);
+                    info!("Removed empty room {room_id}");
+                }
             }
         }
     }
@@ -138,6 +153,7 @@ async fn handle_binary_message(
 
             conn.room_id = Some(room_id.clone());
             conn.player_name = Some(player_name);
+            conn.player_id = Some(player_id);
 
             let resp = protocol::encode(&ServerMessage::RoomCreated {
                 room_id: room_id.clone(),
@@ -170,6 +186,7 @@ async fn handle_binary_message(
 
             conn.room_id = Some(room_id.clone());
             conn.player_name = Some(player_name);
+            conn.player_id = Some(player_id);
 
             let resp = protocol::encode(&ServerMessage::RoomJoined { room_id, player_id })?;
             let _ = tx.try_send(resp);
@@ -194,6 +211,7 @@ async fn handle_binary_message(
 
             conn.room_id = Some(room_id.clone());
             conn.player_name = Some(player_name);
+            conn.player_id = Some(player_id);
 
             let resp = protocol::encode(&ServerMessage::RoomJoined { room_id, player_id })?;
             let _ = tx.try_send(resp);
@@ -224,6 +242,29 @@ async fn handle_binary_message(
 
             if room.all_ready() {
                 let _ = room.broadcast(&ServerMessage::AllPlayersReady).await;
+
+                // Start the game
+                room.start_game()?;
+
+                // Send GameStarted to each player with their ID
+                for player in &room.players {
+                    let msg = ServerMessage::GameStarted {
+                        your_player_id: player.id,
+                    };
+                    let _ = room.send_to(player.id, &msg).await;
+                }
+
+                // Send DeploymentPhaseStarted to each player with their spawn zone
+                if let Some(game) = &room.game {
+                    for player in &room.players {
+                        let spawn_zone = game.spawn_zone_for_player(player.id);
+                        let msg = ServerMessage::DeploymentPhaseStarted {
+                            spawn_zone,
+                            time_limit_ms: game.turn_timer_ms,
+                        };
+                        let _ = room.send_to(player.id, &msg).await;
+                    }
+                }
             }
         }
 
@@ -236,6 +277,7 @@ async fn handle_binary_message(
                 .player_name
                 .take()
                 .ok_or_else(|| ServerError::invalid_message("no player name set"))?;
+            conn.player_id = None;
 
             let should_remove = {
                 let mut room =
@@ -260,50 +302,131 @@ async fn handle_binary_message(
             }
         }
 
-        // Phase 3 will handle these game-state messages
-        ClientMessage::SubmitDeployment { .. } => {
+        ClientMessage::SubmitDeployment { placements } => {
             let room_id = conn
                 .room_id
                 .as_ref()
                 .ok_or_else(|| ServerError::invalid_message("not in a room"))?;
-            let room = state
-                .rooms
-                .get(room_id)
-                .ok_or_else(|| ServerError::RoomNotFound {
-                    room_id: room_id.clone(),
-                })?;
+            let player_id = conn
+                .player_id
+                .ok_or_else(|| ServerError::invalid_message("no player id"))?;
+
+            let mut room =
+                state
+                    .rooms
+                    .get_mut(room_id)
+                    .ok_or_else(|| ServerError::RoomNotFound {
+                        room_id: room_id.clone(),
+                    })?;
+
             if room.status != RoomStatus::Playing {
                 return Err(ServerError::GameNotStarted {
                     room_id: room_id.clone(),
                 });
             }
-            // Placeholder — game logic integration in Phase 3
-            return Err(ServerError::invalid_message(
-                "deployment not yet implemented (Phase 3)",
-            ));
+
+            // Take game out of room to avoid double mutable borrow
+            let mut game = room
+                .game
+                .take()
+                .ok_or_else(|| ServerError::internal("game not initialized"))?;
+
+            let all_deployed = game.submit_deployment(player_id, &placements)?;
+
+            if all_deployed {
+                // Transition to planning phase — notify all players
+                let turn = game.turn();
+                let timer_ms = game.turn_timer_ms;
+
+                let msg = ServerMessage::PlanningPhaseStarted {
+                    turn_number: turn,
+                    time_limit_ms: timer_ms,
+                };
+                let _ = room.broadcast(&msg).await;
+            }
+
+            // Put game back
+            room.game = Some(game);
         }
 
-        ClientMessage::SubmitOrders { .. } => {
+        ClientMessage::SubmitOrders { for_turn, orders } => {
             let room_id = conn
                 .room_id
                 .as_ref()
                 .ok_or_else(|| ServerError::invalid_message("not in a room"))?;
-            let room = state
-                .rooms
-                .get(room_id)
-                .ok_or_else(|| ServerError::RoomNotFound {
-                    room_id: room_id.clone(),
-                })?;
+            let player_id = conn
+                .player_id
+                .ok_or_else(|| ServerError::invalid_message("no player id"))?;
+
+            let mut room =
+                state
+                    .rooms
+                    .get_mut(room_id)
+                    .ok_or_else(|| ServerError::RoomNotFound {
+                        room_id: room_id.clone(),
+                    })?;
+
             if room.status != RoomStatus::Playing {
                 return Err(ServerError::GameNotStarted {
                     room_id: room_id.clone(),
                 });
             }
-            // Placeholder — game logic integration in Phase 3
-            return Err(ServerError::invalid_message(
-                "orders not yet implemented (Phase 3)",
-            ));
+
+            // Take game out of room to avoid double mutable borrow
+            let mut game = room
+                .game
+                .take()
+                .ok_or_else(|| ServerError::internal("game not initialized"))?;
+
+            let all_submitted = game.submit_orders(player_id, for_turn, &orders)?;
+
+            if all_submitted {
+                resolve_and_broadcast(&mut room, &mut game).await?;
+            }
+
+            // Put game back
+            room.game = Some(game);
         }
+    }
+
+    Ok(())
+}
+
+/// Resolve the current turn and broadcast results to all players.
+async fn resolve_and_broadcast(
+    room: &mut crate::room::Room,
+    game: &mut GameInstance,
+) -> Result<(), ServerError> {
+    let events = game.resolve_turn()?;
+
+    // Broadcast resolution events
+    let events_bytes = GameInstance::serialize_events(&events)?;
+    let resolution_msg = ServerMessage::ResolutionStarted {
+        events: events_bytes,
+    };
+    let _ = room.broadcast(&resolution_msg).await;
+
+    // Broadcast updated state
+    let state_bytes = game.serialize_state()?;
+    let state_msg = ServerMessage::TurnCompleted { state: state_bytes };
+    let _ = room.broadcast(&state_msg).await;
+
+    // Check if game is over
+    if game.is_finished() {
+        let winner = game.winner().flatten();
+        let reason = GameInstance::finish_reason(&events);
+        let game_over_msg = ServerMessage::GameOver { winner, reason };
+        let _ = room.broadcast(&game_over_msg).await;
+        room.status = RoomStatus::Finished;
+    } else {
+        // Start next planning phase
+        let turn = game.turn();
+        let timer_ms = game.turn_timer_ms;
+        let planning_msg = ServerMessage::PlanningPhaseStarted {
+            turn_number: turn,
+            time_limit_ms: timer_ms,
+        };
+        let _ = room.broadcast(&planning_msg).await;
     }
 
     Ok(())
