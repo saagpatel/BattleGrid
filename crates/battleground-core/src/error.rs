@@ -1,0 +1,1 @@
+// Game error types
