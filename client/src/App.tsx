@@ -8,6 +8,7 @@ import { LobbyScreen } from './screens/LobbyScreen.js';
 import { WaitingRoom } from './screens/WaitingRoom.js';
 import { DeploymentScreen } from './screens/DeploymentScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
+import { GameOverScreen } from './screens/GameOverScreen.js';
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
@@ -44,6 +45,7 @@ function App() {
   if (!currentRoom) return <LobbyScreen />;
   if (currentRoom.status === 'waiting') return <WaitingRoom />;
   if (phase === 'deploying') return <DeploymentScreen />;
+  if (phase === 'finished') return <GameOverScreen />;
   return <GameScreen />;
 }
 
