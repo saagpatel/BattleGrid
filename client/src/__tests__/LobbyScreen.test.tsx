@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { LobbyScreen } from '../screens/LobbyScreen.js';
 import { useLobbyStore } from '../stores/lobbyStore.js';
 import { useConnectionStore } from '../stores/connectionStore.js';
@@ -11,7 +11,11 @@ vi.mock('../network/client.js', () => ({
 }));
 
 describe('LobbyScreen', () => {
+  const sendMock = vi.fn();
+
   beforeEach(() => {
+    sendMock.mockReset();
+
     useLobbyStore.setState({
       rooms: [],
       currentRoom: null,
@@ -21,6 +25,7 @@ describe('LobbyScreen', () => {
       status: 'connected',
       ws: null,
       reconnectAttempts: 0,
+      send: sendMock,
     });
   });
 
@@ -42,15 +47,15 @@ describe('LobbyScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders room list', () => {
+  it('renders room list and falls back to room id when room name is missing', () => {
     useLobbyStore.setState({
       rooms: [
-        { roomId: 'abc', name: 'Room One', playerCount: 1, maxPlayers: 2, status: 'waiting' },
+        { roomId: 'abc', playerCount: 1, maxPlayers: 2, status: 'waiting' },
         { roomId: 'def', name: 'Room Two', playerCount: 2, maxPlayers: 2, status: 'in_progress' },
       ],
     });
     render(<LobbyScreen />);
-    expect(screen.getByText('Room One')).toBeInTheDocument();
+    expect(screen.getByText('abc')).toBeInTheDocument();
     expect(screen.getByText('Room Two')).toBeInTheDocument();
   });
 
@@ -65,5 +70,13 @@ describe('LobbyScreen', () => {
     render(<LobbyScreen />);
     const createBtn = screen.getByText('Create Room');
     expect(createBtn.closest('button')).toBeDisabled();
+  });
+
+  it('sends quick match request with current player name', () => {
+    render(<LobbyScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: /quick match/i }));
+
+    expect(sendMock).toHaveBeenCalledWith({ type: 'QuickMatch', playerName: 'TestPlayer' });
   });
 });

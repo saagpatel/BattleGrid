@@ -19,10 +19,10 @@ export interface RoomConfig {
 
 export interface RoomInfo {
   roomId: string;
-  name: string;
+  name?: string;
   playerCount: number;
   maxPlayers: number;
-  status: 'waiting' | 'in_progress';
+  status?: 'waiting' | 'in_progress';
 }
 
 export interface PlayerInfo {
@@ -59,6 +59,7 @@ export type ServerMessage =
 export type ClientMessage =
   | { type: 'CreateRoom'; name: string; config: RoomConfig }
   | { type: 'JoinRoom'; roomId: string; playerName: string }
+  | { type: 'QuickMatch'; playerName: string }
   | { type: 'LeaveRoom' }
   | { type: 'SetReady'; ready: boolean }
   | { type: 'ListRooms' }

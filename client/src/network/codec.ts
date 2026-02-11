@@ -8,8 +8,8 @@ import type { ClientMessage, ServerMessage } from '../types/network.js';
 export function encodeMessage(msg: ClientMessage): ArrayBuffer | string {
   const wasm = getWasm();
   if (wasm) {
-    const bytes = wasm.encode_client_message(JSON.stringify(msg));
-    return bytes.buffer as ArrayBuffer;
+    const bytes = wasm.encode_client_message(msg);
+    return Uint8Array.from(bytes).buffer;
   }
   return JSON.stringify(msg);
 }
@@ -27,8 +27,10 @@ export function decodeMessage(data: ArrayBuffer | string): ServerMessage | null 
     const wasm = getWasm();
     if (wasm) {
       const bytes = new Uint8Array(data);
-      const json = wasm.decode_server_message(bytes);
-      return JSON.parse(json) as ServerMessage;
+      const decoded = wasm.decode_server_message(bytes) as ServerMessage | string;
+      return typeof decoded === 'string'
+        ? (JSON.parse(decoded) as ServerMessage)
+        : decoded;
     }
 
     // No WASM — try parsing binary data as UTF-8 JSON

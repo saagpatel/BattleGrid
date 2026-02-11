@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ClientMessage } from '../types/network.js';
+import { encodeMessage } from '../network/codec.js';
 
 export type ConnectionStatus =
   | 'disconnected'
@@ -37,8 +38,8 @@ export const useConnectionStore = create<ConnectionState>()((set, get) => ({
       console.warn('Cannot send: not connected');
       return;
     }
-    // Send as JSON string for now; binary codec upgrade when WASM available
-    ws.send(JSON.stringify(message));
+
+    ws.send(encodeMessage(message));
   },
 
   disconnect: () => {
