@@ -41,11 +41,9 @@ export function LobbyScreen() {
   );
 
   const handleQuickMatch = useCallback(() => {
-    const waiting = rooms.find((r) => r.status === 'waiting' && r.playerCount < r.maxPlayers);
-    if (waiting) {
-      handleJoin(waiting.roomId);
-    }
-  }, [rooms, handleJoin]);
+    const name = playerName.trim() || 'Player';
+    send({ type: 'QuickMatch', playerName: name });
+  }, [playerName, send]);
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-slate-900 p-6 text-white">
@@ -86,7 +84,7 @@ export function LobbyScreen() {
         <Button
           variant="secondary"
           onClick={handleQuickMatch}
-          disabled={status !== 'connected' || rooms.filter((r) => r.status === 'waiting').length === 0}
+          disabled={status !== 'connected'}
         >
           <Zap className="mr-1 inline h-4 w-4" />
           Quick Match
@@ -106,28 +104,31 @@ export function LobbyScreen() {
           </p>
         ) : (
           <ul className="space-y-2">
-            {rooms.map((room) => (
-              <li
-                key={room.roomId}
-                className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-800 px-4 py-3"
-              >
-                <div>
-                  <span className="font-medium">{room.name}</span>
-                  <span className="ml-2 text-sm text-slate-400">
-                    {room.playerCount}/{room.maxPlayers}
-                  </span>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleJoin(room.roomId)}
-                  disabled={
-                    room.status !== 'waiting' || room.playerCount >= room.maxPlayers
-                  }
+            {rooms.map((room) => {
+              const roomLabel = room.name?.trim() || room.roomId;
+              const roomStatus = room.status ?? 'waiting';
+
+              return (
+                <li
+                  key={room.roomId}
+                  className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-800 px-4 py-3"
                 >
-                  Join
-                </Button>
-              </li>
-            ))}
+                  <div>
+                    <span className="font-medium">{roomLabel}</span>
+                    <span className="ml-2 text-sm text-slate-400">
+                      {room.playerCount}/{room.maxPlayers}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleJoin(room.roomId)}
+                    disabled={roomStatus !== 'waiting' || room.playerCount >= room.maxPlayers}
+                  >
+                    Join
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

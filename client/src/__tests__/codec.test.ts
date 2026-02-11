@@ -2,14 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { encodeMessage, decodeMessage } from '../network/codec.js';
 import type { ClientMessage, ServerMessage } from '../types/network.js';
 
-// Mock the WASM loader to return null (no WASM available)
+const wasmMock = {
+  encode_client_message: vi.fn<(msg: unknown) => Uint8Array>(),
+  decode_server_message: vi.fn<(bytes: Uint8Array) => unknown>(),
+};
+
+let wasmEnabled = false;
+
 vi.mock('../wasm/loader.js', () => ({
-  getWasm: () => null,
+  getWasm: () => (wasmEnabled ? wasmMock : null),
 }));
 
-describe('codec (JSON fallback)', () => {
+describe('codec', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wasmEnabled = false;
   });
 
   it('encodes a client message as JSON string when WASM not available', () => {
@@ -29,6 +36,17 @@ describe('codec (JSON fallback)', () => {
     expect(JSON.parse(encoded as string)).toEqual(msg);
   });
 
+  it('uses structured message input when WASM is available', () => {
+    wasmEnabled = true;
+    wasmMock.encode_client_message.mockReturnValue(new Uint8Array([1, 2, 3]));
+
+    const msg: ClientMessage = { type: 'ListRooms' };
+    const encoded = encodeMessage(msg);
+
+    expect(wasmMock.encode_client_message).toHaveBeenCalledWith(msg);
+    expect(encoded).toBeInstanceOf(ArrayBuffer);
+  });
+
   it('decodes a JSON string server message', () => {
     const msg: ServerMessage = { type: 'RoomList', rooms: [] };
     const decoded = decodeMessage(JSON.stringify(msg));
@@ -40,6 +58,26 @@ describe('codec (JSON fallback)', () => {
     const encoder = new TextEncoder();
     const buffer = encoder.encode(JSON.stringify(msg)).buffer;
     const decoded = decodeMessage(buffer as ArrayBuffer);
+    expect(decoded).toEqual(msg);
+  });
+
+  it('returns object payloads directly from WASM decode', () => {
+    wasmEnabled = true;
+    const msg: ServerMessage = { type: 'Pong' };
+    wasmMock.decode_server_message.mockReturnValue(msg);
+
+    const decoded = decodeMessage(new Uint8Array([1, 2]).buffer as ArrayBuffer);
+
+    expect(decoded).toEqual(msg);
+  });
+
+  it('still supports string payloads from WASM decode', () => {
+    wasmEnabled = true;
+    const msg: ServerMessage = { type: 'Pong' };
+    wasmMock.decode_server_message.mockReturnValue(JSON.stringify(msg));
+
+    const decoded = decodeMessage(new Uint8Array([1, 2]).buffer as ArrayBuffer);
+
     expect(decoded).toEqual(msg);
   });
 
