@@ -7,7 +7,7 @@ export function ReplayScreen({ onClose }: { onClose: () => void }) {
   const replayBytes = useGameStore((s) => s.replayBytes);
   const [currentTurn, setCurrentTurn] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [replayData, setReplayData] = useState<any>(null);
+const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gridRadius: number } } | null>(null);
 
   // Decode replay data
   useEffect(() => {
