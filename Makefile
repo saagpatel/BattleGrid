@@ -1,4 +1,4 @@
-.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev test clean
+.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev test clean prune
 
 setup:
 	@./setup.sh
@@ -37,3 +37,9 @@ test:
 clean:
 	cargo clean
 	rm -rf client/node_modules client/dist client/src/wasm/pkg
+
+prune: clean
+	rm -rf target
+	rm -rf client/.vite client/.cache client/.turbo
+	rm -rf client/node_modules/.vite client/node_modules/.cache
+	find . -name ".DS_Store" -type f -delete
