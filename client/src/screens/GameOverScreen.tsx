@@ -1,19 +1,24 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useGameStore } from '../stores/gameStore.js';
 import { useLobbyStore } from '../stores/lobbyStore.js';
 import { Button } from '../components/Button.js';
 import { PLAYER_COLORS } from '../renderer/colors.js';
+import { ReplayScreen } from './ReplayScreen.js';
 
 export function GameOverScreen() {
   const winner = useGameStore((s) => s.winner);
   const playerId = useGameStore((s) => s.playerId);
   const units = useGameStore((s) => s.units);
   const turn = useGameStore((s) => s.turn);
+  const replayBytes = useGameStore((s) => s.replayBytes);
   const reset = useGameStore((s) => s.reset);
   const leaveRoom = useLobbyStore((s) => s.setCurrentRoom);
 
   const isVictory = winner === playerId;
   const isDraw = winner === null;
+  const hasReplay = replayBytes !== null;
+
+  const [showReplay, setShowReplay] = useState(false);
 
   const stats = useMemo(() => {
     let aliveUnits = 0;
@@ -42,6 +47,16 @@ export function GameOverScreen() {
     reset();
     leaveRoom(null);
   };
+
+  const handleWatchReplay = () => {
+    if (replayBytes) {
+      setShowReplay(true);
+    }
+  };
+
+  if (showReplay) {
+    return <ReplayScreen onClose={() => setShowReplay(false)} />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
@@ -93,8 +108,8 @@ export function GameOverScreen() {
         <Button onClick={handleReturnToLobby}>
           Return to Lobby
         </Button>
-        <Button variant="ghost" disabled>
-          Watch Replay
+        <Button variant="ghost" onClick={handleWatchReplay} disabled={!hasReplay}>
+          {hasReplay ? 'Watch Replay' : 'Replay Unavailable'}
         </Button>
       </div>
     </div>

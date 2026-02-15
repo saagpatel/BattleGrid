@@ -21,6 +21,7 @@ export interface GameState {
   turnTimerMs: number;
   winner: number | null;
   events: SimEvent[];
+  replayBytes: Uint8Array | null;
 
   setPhase: (phase: GamePhase) => void;
   setTurn: (turn: number) => void;
@@ -32,6 +33,7 @@ export interface GameState {
   setTurnTimer: (ms: number) => void;
   setWinner: (winner: number) => void;
   setEvents: (events: SimEvent[]) => void;
+  setReplayBytes: (bytes: Uint8Array) => void;
   addOrder: (order: UnitOrder) => void;
   removeOrder: (unitId: number) => void;
   clearOrders: () => void;
@@ -50,6 +52,7 @@ const initialState = {
   turnTimerMs: 30000,
   winner: null as number | null,
   events: [] as SimEvent[],
+  replayBytes: null as Uint8Array | null,
 };
 
 export const useGameStore = create<GameState>()((set) => ({
@@ -68,6 +71,7 @@ export const useGameStore = create<GameState>()((set) => ({
   setTurnTimer: (ms) => set({ turnTimerMs: ms }),
   setWinner: (winner) => set({ winner }),
   setEvents: (events) => set({ events }),
+  setReplayBytes: (bytes) => set({ replayBytes: bytes }),
 
   addOrder: (order) =>
     set((state) => ({

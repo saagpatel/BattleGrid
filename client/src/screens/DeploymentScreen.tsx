@@ -1,8 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '../components/Button.js';
 import { Timer } from '../components/Timer.js';
 import { useGameStore } from '../stores/gameStore.js';
 import { useConnectionStore } from '../stores/connectionStore.js';
+import { GameCanvas } from '../renderer/GameCanvas.js';
+import type { HexCell } from '../renderer/HexRenderer.js';
+import type { UnitRenderData } from '../renderer/UnitRenderer.js';
 import type { DeployOrder, UnitClass, HexCoord } from '../types/game.js';
 
 /** Formats a unit class name for display */
@@ -36,6 +39,28 @@ export function DeploymentScreen() {
   });
 
   const allPlaced = deployments.length >= availableUnits.length;
+
+  // Create cells for the spawn zone hexes
+  const cells = useMemo<HexCell[]>(() => {
+    return spawnZone.map((hex) => ({
+      q: hex.q,
+      r: hex.r,
+      terrain: 'Plains' as const,
+    }));
+  }, [spawnZone]);
+
+  // Create unit render data from deployments
+  const units = useMemo<UnitRenderData[]>(() => {
+    return deployments.map((deploy, i) => ({
+      id: i,
+      unitType: deploy.unitClass,
+      owner: 0,
+      q: deploy.coord.q,
+      r: deploy.coord.r,
+      hp: 100,
+      maxHp: 100,
+    }));
+  }, [deployments]);
 
   const handleHexClick = useCallback(
     (hex: HexCoord) => {
@@ -108,31 +133,23 @@ export function DeploymentScreen() {
           )}
         </div>
 
-        {/* Spawn zone grid (placeholder — real hex canvas comes in Phase 6) */}
-        <div className="w-80">
+        {/* Spawn zone hex canvas */}
+        <div className="relative" style={{ width: '600px', height: '500px' }}>
           <h2 className="mb-2 text-sm font-semibold text-slate-400">Spawn Zone</h2>
-          <div className="grid grid-cols-5 gap-1">
-            {spawnZone.map((hex) => {
-              const deployed = deployments.find((d) => hexEq(d.coord, hex));
-              return (
-                <button
-                  key={`${hex.q},${hex.r}`}
-                  onClick={() => handleHexClick(hex)}
-                  disabled={!selectedClass || !!deployed}
-                  className={`flex h-14 w-14 items-center justify-center rounded-md border text-xs font-medium transition-colors ${
-                    deployed
-                      ? 'border-green-600 bg-green-900/50 text-green-300'
-                      : selectedClass
-                        ? 'border-indigo-500 bg-slate-800 text-slate-300 hover:bg-indigo-900/50'
-                        : 'border-slate-700 bg-slate-800 text-slate-500'
-                  }`}
-                  title={`Hex (${hex.q}, ${hex.r})`}
-                >
-                  {deployed ? formatUnitClass(deployed.unitClass).slice(0, 3) : `${hex.q},${hex.r}`}
-                </button>
-              );
-            })}
-          </div>
+          <GameCanvas
+            cells={cells}
+            units={units}
+            visibleHexes={spawnZone}
+            lastSeenHexes={[]}
+            moveRangeHexes={[]}
+            attackRangeHexes={[]}
+            pathPreview={[]}
+            spawnZone={spawnZone}
+            showFog={false}
+            showGrid={true}
+            onHexClick={handleHexClick}
+            onHexRightClick={() => {}}
+          />
         </div>
       </div>
 

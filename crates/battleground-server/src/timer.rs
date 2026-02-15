@@ -8,7 +8,6 @@ use tokio::time::{Duration, Instant};
 /// The timer is started when a phase begins (deployment or planning).
 /// When the deadline expires, the `expired` notify is triggered.
 /// The timer can be cancelled when all submissions arrive early.
-#[allow(dead_code)] // Wired into game loop in future iteration
 pub struct TurnTimer {
     deadline: Instant,
     duration: Duration,
@@ -16,7 +15,6 @@ pub struct TurnTimer {
     expired: Arc<Notify>,
 }
 
-#[allow(dead_code)] // Wired into game loop in future iteration
 impl TurnTimer {
     /// Create a new timer with the given duration in milliseconds.
     pub fn new(duration_ms: u64) -> Self {
@@ -67,13 +65,11 @@ impl TurnTimer {
 
 /// Handle to interact with a running timer.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct TurnTimerHandle {
     cancel: Arc<Notify>,
     expired: Arc<Notify>,
 }
 
-#[allow(dead_code)]
 impl TurnTimerHandle {
     /// Cancel the timer (all players submitted early).
     pub fn cancel(&self) {

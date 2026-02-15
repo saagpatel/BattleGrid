@@ -1,6 +1,7 @@
 import { useConnectionStore } from '../stores/connectionStore.js';
 import { useGameStore } from '../stores/gameStore.js';
 import { useLobbyStore } from '../stores/lobbyStore.js';
+import { useToastStore } from '../stores/toastStore.js';
 import { decodeMessage } from './codec.js';
 import type { ServerMessage } from '../types/network.js';
 
@@ -17,6 +18,7 @@ function getReconnectDelay(attempts: number): number {
 function handleMessage(msg: ServerMessage): void {
   const game = useGameStore.getState();
   const lobby = useLobbyStore.getState();
+  const toast = useToastStore.getState();
 
   switch (msg.type) {
     case 'RoomList':
@@ -25,6 +27,7 @@ function handleMessage(msg: ServerMessage): void {
 
     case 'RoomJoined':
       lobby.setCurrentRoom(msg.room);
+      toast.addToast('Joined room successfully', 'success');
       break;
 
     case 'RoomUpdated':
@@ -35,6 +38,7 @@ function handleMessage(msg: ServerMessage): void {
       game.setGrid(msg.grid);
       game.setTurnTimer(msg.turnTimerMs);
       game.setPhase('deploying');
+      toast.addToast('Game starting! Deploy your units.', 'info', 4000);
       break;
 
     case 'DeploymentPhase':
@@ -50,6 +54,9 @@ function handleMessage(msg: ServerMessage): void {
       game.setTurnTimer(msg.timerMs);
       game.clearOrders();
       game.setPhase('planning');
+      if (msg.turn === 1) {
+        toast.addToast('Battle begins! Issue your orders.', 'info', 4000);
+      }
       break;
 
     case 'ResolutionPhase':
@@ -65,10 +72,24 @@ function handleMessage(msg: ServerMessage): void {
     case 'GameOver':
       game.setWinner(msg.winner);
       game.setPhase('finished');
+      const playerId = game.playerId;
+      if (msg.winner === playerId) {
+        toast.addToast('Victory! You won the battle!', 'success', 5000);
+      } else if (msg.winner === null) {
+        toast.addToast('Game ended in a draw.', 'info', 5000);
+      } else {
+        toast.addToast('Defeat. Better luck next time!', 'error', 5000);
+      }
+      break;
+
+    case 'ReplayData':
+      game.setReplayBytes(msg.replayBytes);
+      toast.addToast('Replay data received', 'success', 2000);
       break;
 
     case 'Error':
       console.error('Server error:', msg.message);
+      toast.addToast(msg.message, 'error', 5000);
       break;
 
     case 'Pong':

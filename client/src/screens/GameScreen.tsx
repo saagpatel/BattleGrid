@@ -13,6 +13,8 @@ import { OrderList } from '../components/hud/OrderList.js';
 import { GameLog } from '../components/hud/GameLog.js';
 import { MiniMap } from '../components/hud/MiniMap.js';
 import { CombatPreviewTooltip, buildCombatPreview } from '../components/hud/UnitPanel.js';
+import { HelpOverlay } from '../components/HelpOverlay.js';
+import { HelpCircle } from 'lucide-react';
 import type { CombatPreviewData } from '../components/hud/UnitPanel.js';
 import type { HexCoord } from '../renderer/hexMath.js';
 import type { HexCell } from '../renderer/HexRenderer.js';
@@ -29,6 +31,8 @@ export function GameScreen() {
   const events = useGameStore((s) => s.events);
   const addOrder = useGameStore((s) => s.addOrder);
   const clearOrders = useGameStore((s) => s.clearOrders);
+
+  const [showHelp, setShowHelp] = useState(false);
 
   const selectedUnitId = useUIStore((s) => s.selectedUnitId);
   const selectUnit = useUIStore((s) => s.selectUnit);
@@ -241,6 +245,32 @@ export function GameScreen() {
     }
   }, [send, turn, orders, clearOrders]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ?: Show help
+      if (e.key === '?' || e.key === 'F1') {
+        e.preventDefault();
+        setShowHelp(true);
+      }
+      // ESC: Deselect unit or close help
+      if (e.key === 'Escape') {
+        if (showHelp) {
+          setShowHelp(false);
+        } else {
+          selectUnit(null);
+        }
+      }
+      // Enter: Submit orders (if in planning phase and have orders)
+      if (e.key === 'Enter' && phase === 'planning' && orders.length > 0 && !isAnimating) {
+        handleSubmitOrders();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [phase, orders, isAnimating, showHelp, selectUnit, handleSubmitOrders]);
+
   return (
     <div className="flex h-screen flex-col bg-slate-900 text-white">
       {/* Top bar */}
@@ -295,7 +325,20 @@ export function GameScreen() {
             screenY={combatPreview.screenY}
           />
         )}
+
+        {/* Help button */}
+        <button
+          onClick={() => setShowHelp(true)}
+          className="absolute bottom-4 left-4 rounded-full bg-slate-800 p-3 text-slate-400 shadow-lg border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors"
+          aria-label="Show help"
+          title="Keyboard shortcuts (? or F1)"
+        >
+          <HelpCircle className="h-5 w-5" />
+        </button>
       </div>
+
+      {/* Help overlay */}
+      {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

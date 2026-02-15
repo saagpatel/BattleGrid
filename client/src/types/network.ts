@@ -51,6 +51,7 @@ export type ServerMessage =
   | { type: 'ResolutionPhase'; events: SimEvent[] }
   | { type: 'TurnResult'; turn: number; units: UnitData[] }
   | { type: 'GameOver'; winner: number }
+  | { type: 'ReplayData'; replayBytes: Uint8Array }
   | { type: 'Error'; message: string }
   | { type: 'Pong' };
 
