@@ -6,6 +6,7 @@ use crate::error::ServerError;
 use crate::game::GameInstance;
 use crate::protocol::{self, RoomConfig, RoomInfo, ServerMessage};
 use crate::reconnect::DisconnectTracker;
+use crate::timer::{TurnTimer, TurnTimerHandle};
 
 /// Status of a game room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +36,10 @@ pub struct Room {
     pub game: Option<GameInstance>,
     /// Tracks disconnected players during an active game.
     pub disconnect_tracker: DisconnectTracker,
+    /// Turn timer for deployment and planning phases.
+    pub turn_timer: TurnTimer,
+    /// Handle for the current active timer (if any).
+    pub timer_handle: Option<TurnTimerHandle>,
 }
 
 impl Room {
@@ -43,6 +48,8 @@ impl Room {
         Self {
             id,
             players: Vec::new(),
+            turn_timer: TurnTimer::new(config.turn_timer_ms),
+            timer_handle: None,
             config,
             status: RoomStatus::Waiting,
             created_at: Instant::now(),

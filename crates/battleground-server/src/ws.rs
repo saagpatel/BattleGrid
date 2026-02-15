@@ -283,6 +283,34 @@ async fn handle_binary_message(
                         };
                         let _ = room.send_to(player.id, &msg).await;
                     }
+
+                    // Start deployment timer
+                    let timer_handle = room.turn_timer.start();
+                    let timer_handle_clone = timer_handle.clone();
+                    let room_id_clone = room_id.clone();
+                    let state_clone = state.clone();
+
+                    tokio::spawn(async move {
+                        timer_handle_clone.wait_expired().await;
+                        // Timer expired — auto-deploy for non-submitted players
+                        if let Some(mut room) = state_clone.rooms.get_mut(&room_id_clone) {
+                            // Collect player IDs first to avoid borrow conflicts
+                            let player_ids: Vec<u8> = room.players.iter().map(|p| p.id).collect();
+
+                            if let Some(game) = &mut room.game {
+                                for player_id in player_ids {
+                                    game.auto_deploy(player_id);
+                                }
+                                // Transition to planning phase
+                                let room_id_inner = room_id_clone.clone();
+                                let state_inner = state_clone.clone();
+                                if let Err(e) = handle_deployment_complete(room_id_inner, state_inner, &mut room).await {
+                                    warn!("Error completing deployment after timeout: {e}");
+                                }
+                            }
+                        }
+                    });
+                    room.timer_handle = Some(timer_handle);
                 }
             }
         }
@@ -362,15 +390,16 @@ async fn handle_binary_message(
             };
 
             if all_deployed {
-                // Transition to planning phase — notify all players
-                let turn = game.turn();
-                let timer_ms = game.turn_timer_ms;
+                // Put game back first
+                room.game = Some(game);
 
-                let msg = ServerMessage::PlanningPhaseStarted {
-                    turn_number: turn,
-                    time_limit_ms: timer_ms,
-                };
-                let _ = room.broadcast(&msg).await;
+                // Transition to planning phase
+                if let Err(e) = handle_deployment_complete(room_id.clone(), state.clone(), &mut room).await {
+                    return Err(e);
+                }
+
+                // Take game back out for final restoration
+                game = room.game.take().expect("game exists");
             }
 
             // Put game back
@@ -418,7 +447,7 @@ async fn handle_binary_message(
             };
 
             if all_submitted {
-                if let Err(e) = resolve_and_broadcast(&mut room, &mut game).await {
+                if let Err(e) = resolve_and_broadcast(room_id.clone(), state.clone(), &mut room, &mut game).await {
                     room.game = Some(game);
                     return Err(e);
                 }
@@ -434,18 +463,98 @@ async fn handle_binary_message(
 
 /// Build the application router for testing and production use.
 pub fn build_app(state: Arc<AppState>) -> Router<()> {
-    Router::new()
+    use tower_http::services::ServeDir;
+
+    // Serve static files from /app/static if it exists, otherwise skip
+    let static_dir = std::path::Path::new("/app/static");
+    let router = Router::new()
         .route("/ws", axum::routing::get(ws_handler))
         .route("/health", axum::routing::get(|| async { "ok" }))
         .layer(tower_http::cors::CorsLayer::permissive())
-        .with_state(state)
+        .with_state(state);
+
+    // Add static file serving if the directory exists
+    if static_dir.exists() {
+        router.fallback_service(ServeDir::new(static_dir))
+    } else {
+        router
+    }
+}
+
+/// Start the planning phase timer and spawn a task to handle expiry.
+fn start_planning_timer(room_id: String, state: Arc<AppState>, room: &mut crate::room::Room) {
+    let timer_handle = room.turn_timer.start();
+    let timer_handle_clone = timer_handle.clone();
+    let room_id_clone = room_id.clone();
+    let state_clone = state.clone();
+
+    tokio::spawn(async move {
+        timer_handle_clone.wait_expired().await;
+        // Timer expired — force empty orders for non-submitted players
+        if let Some(mut room) = state_clone.rooms.get_mut(&room_id_clone) {
+            // Collect player IDs first to avoid borrow conflicts
+            let player_ids: Vec<u8> = room.players.iter().map(|p| p.id).collect();
+
+            if let Some(game) = room.game.as_mut() {
+                for player_id in player_ids {
+                    game.force_empty_orders(player_id);
+                }
+
+                // Resolve turn if all orders are now submitted
+                if game.all_orders_submitted() {
+                    let mut game_taken = room.game.take().expect("game exists");
+                    let room_id_inner = room_id_clone.clone();
+                    let state_inner = state_clone.clone();
+                    if let Err(e) = resolve_and_broadcast(room_id_inner, state_inner, &mut room, &mut game_taken).await {
+                        warn!("Error resolving turn after timeout: {e}");
+                    }
+                    room.game = Some(game_taken);
+                }
+            }
+        }
+    });
+    room.timer_handle = Some(timer_handle);
+}
+
+/// Handle transition from deployment to planning phase.
+async fn handle_deployment_complete(
+    room_id: String,
+    state: Arc<AppState>,
+    room: &mut crate::room::Room,
+) -> Result<(), ServerError> {
+    // Cancel any running timer
+    if let Some(handle) = &room.timer_handle {
+        handle.cancel();
+    }
+
+    let game = room.game.as_ref().ok_or_else(|| ServerError::internal("game not initialized"))?;
+    let turn = game.turn();
+    let timer_ms = game.turn_timer_ms;
+
+    let msg = ServerMessage::PlanningPhaseStarted {
+        turn_number: turn,
+        time_limit_ms: timer_ms,
+    };
+    let _ = room.broadcast(&msg).await;
+
+    // Start planning phase timer
+    start_planning_timer(room_id, state, room);
+
+    Ok(())
 }
 
 /// Resolve the current turn and broadcast results to all players.
 async fn resolve_and_broadcast(
+    room_id: String,
+    state: Arc<AppState>,
     room: &mut crate::room::Room,
     game: &mut GameInstance,
 ) -> Result<(), ServerError> {
+    // Cancel any running timer
+    if let Some(handle) = &room.timer_handle {
+        handle.cancel();
+    }
+
     let events = game.resolve_turn()?;
 
     // Broadcast resolution events
@@ -476,6 +585,9 @@ async fn resolve_and_broadcast(
             time_limit_ms: timer_ms,
         };
         let _ = room.broadcast(&planning_msg).await;
+
+        // Start planning phase timer
+        start_planning_timer(room_id, state, room);
     }
 
     Ok(())

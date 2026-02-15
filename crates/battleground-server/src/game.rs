@@ -77,7 +77,6 @@ impl GameInstance {
     }
 
     /// Get the current game phase.
-    #[allow(dead_code)] // Used in timer-driven game loop
     pub fn phase(&self) -> &GamePhase {
         &self.state.phase
     }
@@ -193,7 +192,6 @@ impl GameInstance {
     }
 
     /// Force-submit empty orders for a player (used on timeout).
-    #[allow(dead_code)] // Used by timer-driven game loop
     pub fn force_empty_orders(&mut self, player_id: u8) {
         let pid = PlayerId(player_id);
         if !self.submitted.contains(&pid) {
@@ -203,7 +201,6 @@ impl GameInstance {
     }
 
     /// Check if all players have submitted orders.
-    #[allow(dead_code)] // Used by timer-driven game loop
     pub fn all_orders_submitted(&self) -> bool {
         self.submitted.len() == self.player_count
     }
@@ -270,7 +267,6 @@ impl GameInstance {
     }
 
     /// Auto-deploy default army positions for a player who times out.
-    #[allow(dead_code)] // Used by timer-driven game loop
     pub fn auto_deploy(&mut self, player_id: u8) {
         let pid = PlayerId(player_id);
         if self.deployments.contains_key(&pid) {
