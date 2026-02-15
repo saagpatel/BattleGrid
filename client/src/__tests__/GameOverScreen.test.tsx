@@ -63,9 +63,9 @@ describe('GameOverScreen', () => {
     expect(screen.getByText('Return to Lobby')).toBeDefined();
   });
 
-  it('has disabled replay button', () => {
+  it('has disabled replay button when no replay data', () => {
     render(<GameOverScreen />);
-    const replayButton = screen.getByText('Watch Replay');
+    const replayButton = screen.getByText('Replay Unavailable');
     expect(replayButton.closest('button')?.disabled).toBe(true);
   });
 });

@@ -241,6 +241,23 @@ export function GameScreen() {
     }
   }, [send, turn, orders, clearOrders]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC: Deselect unit
+      if (e.key === 'Escape') {
+        selectUnit(null);
+      }
+      // Enter: Submit orders (if in planning phase and have orders)
+      if (e.key === 'Enter' && phase === 'planning' && orders.length > 0 && !isAnimating) {
+        handleSubmitOrders();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [phase, orders, isAnimating, selectUnit, handleSubmitOrders]);
+
   return (
     <div className="flex h-screen flex-col bg-slate-900 text-white">
       {/* Top bar */}

@@ -26,18 +26,33 @@ function App() {
     connect(WS_URL);
   }, []);
 
-  // Show connection overlay on disconnect
+  // Show connection states
+  if (status === 'connecting') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="text-center">
+          <div className="mb-4 inline-block h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-t-indigo-500"></div>
+          <h1 className="mb-2 text-3xl font-bold">BattleGrid</h1>
+          <p className="text-slate-400">Connecting to server...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'disconnected') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
-        <h1 className="mb-4 text-3xl font-bold">BattleGrid</h1>
-        <p className="mb-4 text-slate-400">Unable to connect to server.</p>
-        <button
-          onClick={() => connect(WS_URL)}
-          className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
-        >
-          Retry Connection
-        </button>
+        <div className="text-center">
+          <div className="mb-4 text-6xl">⚠️</div>
+          <h1 className="mb-2 text-3xl font-bold">Connection Lost</h1>
+          <p className="mb-6 text-slate-400">Unable to reach the game server.</p>
+          <button
+            onClick={() => connect(WS_URL)}
+            className="rounded-md bg-indigo-600 px-6 py-3 font-medium text-white hover:bg-indigo-700 active:bg-indigo-800 transition-colors"
+          >
+            Retry Connection
+          </button>
+        </div>
       </div>
     );
   }
