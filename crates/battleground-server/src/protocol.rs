@@ -46,6 +46,9 @@ pub enum ServerMessage {
         winner: Option<u8>,
         reason: String,
     },
+    ReplayData {
+        replay_bytes: Vec<u8>,
+    },
     Error {
         message: String,
     },

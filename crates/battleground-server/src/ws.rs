@@ -575,6 +575,13 @@ async fn resolve_and_broadcast(
         let reason = GameInstance::finish_reason(&events);
         let game_over_msg = ServerMessage::GameOver { winner, reason };
         let _ = room.broadcast(&game_over_msg).await;
+
+        // Send replay data
+        let replay_bytes = bincode::serialize(&game.replay)
+            .map_err(|e| ServerError::internal(e.to_string()))?;
+        let replay_msg = ServerMessage::ReplayData { replay_bytes };
+        let _ = room.broadcast(&replay_msg).await;
+
         room.status = RoomStatus::Finished;
     } else {
         // Start next planning phase

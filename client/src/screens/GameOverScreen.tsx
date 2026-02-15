@@ -9,11 +9,13 @@ export function GameOverScreen() {
   const playerId = useGameStore((s) => s.playerId);
   const units = useGameStore((s) => s.units);
   const turn = useGameStore((s) => s.turn);
+  const replayBytes = useGameStore((s) => s.replayBytes);
   const reset = useGameStore((s) => s.reset);
   const leaveRoom = useLobbyStore((s) => s.setCurrentRoom);
 
   const isVictory = winner === playerId;
   const isDraw = winner === null;
+  const hasReplay = replayBytes !== null;
 
   const stats = useMemo(() => {
     let aliveUnits = 0;
@@ -41,6 +43,12 @@ export function GameOverScreen() {
   const handleReturnToLobby = () => {
     reset();
     leaveRoom(null);
+  };
+
+  const handleWatchReplay = () => {
+    if (replayBytes) {
+      alert(`Replay data received (${replayBytes.length} bytes).\n\nFull replay viewer coming soon! For now, replay data is successfully captured from the server.`);
+    }
   };
 
   return (
@@ -93,8 +101,8 @@ export function GameOverScreen() {
         <Button onClick={handleReturnToLobby}>
           Return to Lobby
         </Button>
-        <Button variant="ghost" disabled>
-          Watch Replay
+        <Button variant="ghost" onClick={handleWatchReplay} disabled={!hasReplay}>
+          {hasReplay ? 'Watch Replay' : 'Replay Unavailable'}
         </Button>
       </div>
     </div>

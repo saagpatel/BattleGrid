@@ -9,6 +9,7 @@ import { WaitingRoom } from './screens/WaitingRoom.js';
 import { DeploymentScreen } from './screens/DeploymentScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { GameOverScreen } from './screens/GameOverScreen.js';
+import { ToastContainer } from './components/Toast.js';
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
@@ -42,11 +43,19 @@ function App() {
   }
 
   // State-based routing
-  if (!currentRoom) return <LobbyScreen />;
-  if (currentRoom.status === 'waiting') return <WaitingRoom />;
-  if (phase === 'deploying') return <DeploymentScreen />;
-  if (phase === 'finished') return <GameOverScreen />;
-  return <GameScreen />;
+  let screen;
+  if (!currentRoom) screen = <LobbyScreen />;
+  else if (currentRoom.status === 'waiting') screen = <WaitingRoom />;
+  else if (phase === 'deploying') screen = <DeploymentScreen />;
+  else if (phase === 'finished') screen = <GameOverScreen />;
+  else screen = <GameScreen />;
+
+  return (
+    <>
+      {screen}
+      <ToastContainer />
+    </>
+  );
 }
 
 export default App;
