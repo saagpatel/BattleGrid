@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useGameStore } from '../stores/gameStore.js';
 import { useLobbyStore } from '../stores/lobbyStore.js';
 import { Button } from '../components/Button.js';
 import { PLAYER_COLORS } from '../renderer/colors.js';
+import { ReplayScreen } from './ReplayScreen.js';
 
 export function GameOverScreen() {
   const winner = useGameStore((s) => s.winner);
@@ -16,6 +17,8 @@ export function GameOverScreen() {
   const isVictory = winner === playerId;
   const isDraw = winner === null;
   const hasReplay = replayBytes !== null;
+
+  const [showReplay, setShowReplay] = useState(false);
 
   const stats = useMemo(() => {
     let aliveUnits = 0;
@@ -47,9 +50,13 @@ export function GameOverScreen() {
 
   const handleWatchReplay = () => {
     if (replayBytes) {
-      alert(`Replay data received (${replayBytes.length} bytes).\n\nFull replay viewer coming soon! For now, replay data is successfully captured from the server.`);
+      setShowReplay(true);
     }
   };
+
+  if (showReplay) {
+    return <ReplayScreen onClose={() => setShowReplay(false)} />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
