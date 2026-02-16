@@ -1,4 +1,4 @@
-.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev test clean prune
+.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev lean-dev test clean clean-heavy clean-local prune
 
 setup:
 	@./setup.sh
@@ -30,6 +30,9 @@ dev:
 	@echo "Server: http://localhost:3001  |  Client: http://localhost:5173"
 	@wait
 
+lean-dev:
+	@./scripts/dev-lean.sh
+
 test:
 	cargo test --workspace
 	cd client && pnpm test
@@ -37,6 +40,12 @@ test:
 clean:
 	cargo clean
 	rm -rf client/node_modules client/dist client/src/wasm/pkg
+
+clean-heavy:
+	@./scripts/clean-heavy.sh
+
+clean-local:
+	@./scripts/clean-local.sh
 
 prune: clean
 	rm -rf target

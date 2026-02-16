@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), wasm(), tailwindcss()],
+  cacheDir: process.env.VITE_CACHE_DIR || undefined,
   server: {
     port: 5173,
     proxy: {

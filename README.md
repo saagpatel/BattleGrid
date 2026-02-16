@@ -87,6 +87,9 @@ Rust Monorepo                          Browser Client
 make dev
 # Server: http://localhost:3001
 # Client: http://localhost:5173
+
+# Low-disk mode (ephemeral build caches + auto cleanup on exit)
+make lean-dev
 ```
 
 Open two browser tabs. Create a room in one, join with the room code in the other. Ready up and play.
@@ -133,8 +136,25 @@ make test          # Run all 328 tests
 make build         # Build everything
 make build-wasm    # Rebuild WASM bridge
 make dev           # Start dev servers with hot reload
-make clean         # Clean all build artifacts
+make lean-dev      # Start in low-disk mode with ephemeral caches
+make clean-heavy   # Remove heavy build artifacts only (keeps node_modules)
+make clean-local   # Remove all reproducible local caches/artifacts
+make clean         # Legacy cleanup target (includes node_modules)
 ```
+
+### Normal Dev vs Lean Dev
+
+- `make dev`: fastest repeat startup when caches are warm, but it keeps build outputs around (for example `target/`, `client/src/wasm/pkg`, Vite caches).
+- `make lean-dev`: runs with temporary cache dirs (`/tmp/battlegrid-lean.*`) and automatically cleans heavy build artifacts when you stop the app.
+- `make lean-dev` also works around macOS path-delimiter issues if your project path contains `:`.
+
+Tradeoff:
+- Lean mode uses less persistent disk, but startup can be slower because Rust and Vite cache data is rebuilt more often.
+- Normal mode is faster for repeated restarts, but disk usage grows over time.
+
+Cleanup commands:
+- `make clean-heavy`: safe targeted cleanup for heavy artifacts only.
+- `make clean-local`: full local cleanup of reproducible caches (including `client/node_modules`).
 
 ## License
 
