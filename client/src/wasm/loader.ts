@@ -9,6 +9,10 @@
 interface WasmModule {
   decode_server_message: (data: Uint8Array) => unknown;
   encode_client_message: (msg: unknown) => Uint8Array;
+  decode_replay_summary?: (data: Uint8Array) => unknown;
+  decode_game_state?: (data: Uint8Array) => unknown;
+  decode_sim_events?: (data: Uint8Array) => unknown;
+  encode_turn_orders?: (orders: unknown) => Uint8Array;
   WasmGame?: { new (bytes: Uint8Array): unknown };
   hex_to_pixel?: (q: number, r: number, hex_size: number) => unknown;
   pixel_to_hex?: (x: number, y: number, hex_size: number) => unknown;

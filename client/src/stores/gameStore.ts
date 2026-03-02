@@ -31,7 +31,7 @@ export interface GameState {
   setSpawnZone: (zone: HexCoord[]) => void;
   setAvailableUnits: (units: UnitClass[]) => void;
   setTurnTimer: (ms: number) => void;
-  setWinner: (winner: number) => void;
+  setWinner: (winner: number | null) => void;
   setEvents: (events: SimEvent[]) => void;
   setReplayBytes: (bytes: Uint8Array) => void;
   addOrder: (order: UnitOrder) => void;

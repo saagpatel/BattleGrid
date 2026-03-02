@@ -11,9 +11,36 @@ export interface LobbyState {
   setPlayerName: (name: string) => void;
 }
 
+function getLocalStorage():
+  | {
+      getItem: (key: string) => string | null;
+      setItem: (key: string, value: string) => void;
+    }
+  | null {
+  const candidate =
+    (typeof window !== 'undefined' ? window.localStorage : null) ??
+    (typeof globalThis !== 'undefined'
+      ? (globalThis as { localStorage?: unknown }).localStorage
+      : null);
+
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    typeof (candidate as { getItem?: unknown }).getItem === 'function' &&
+    typeof (candidate as { setItem?: unknown }).setItem === 'function'
+  ) {
+    return candidate as {
+      getItem: (key: string) => string | null;
+      setItem: (key: string, value: string) => void;
+    };
+  }
+
+  return null;
+}
+
 function loadPlayerName(): string {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('battleGrid:playerName') ?? '';
+  const storage = getLocalStorage();
+  return storage?.getItem('battleGrid:playerName') ?? '';
 }
 
 export const useLobbyStore = create<LobbyState>()((set) => ({
@@ -24,9 +51,8 @@ export const useLobbyStore = create<LobbyState>()((set) => ({
   setRooms: (rooms) => set({ rooms }),
   setCurrentRoom: (room) => set({ currentRoom: room }),
   setPlayerName: (name) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('battleGrid:playerName', name);
-    }
+    const storage = getLocalStorage();
+    storage?.setItem('battleGrid:playerName', name);
     set({ playerName: name });
   },
 }));

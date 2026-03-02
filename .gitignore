@@ -31,3 +31,7 @@ Thumbs.db
 *.o
 *.so
 *.dylib
+
+# Local verification/perf artifacts
+.codex/verify.last.json
+.perf-results/

@@ -1,29 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useGameStore } from '../stores/gameStore.js';
 import { Button } from '../components/Button.js';
 import { Play, Pause, SkipBack, SkipForward, X } from 'lucide-react';
+import { getWasm } from '../wasm/loader.js';
 
 export function ReplayScreen({ onClose }: { onClose: () => void }) {
   const replayBytes = useGameStore((s) => s.replayBytes);
   const [currentTurn, setCurrentTurn] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gridRadius: number } } | null>(null);
+  const replayData = useMemo(() => {
+    if (!replayBytes) return null;
 
-  // Decode replay data
-  useEffect(() => {
-    if (replayBytes) {
-      try {
-        // For now, we'll show a simplified view using existing game state
-        // Full WASM replay deserialization would go here
-        setReplayData({
-          totalTurns: 10, // Placeholder
-          config: { gridRadius: 7 },
-        });
-      } catch (err) {
-        console.error('Failed to decode replay:', err);
+    try {
+      const wasm = getWasm();
+      if (wasm && typeof (wasm as { decode_replay_summary?: unknown }).decode_replay_summary === 'function') {
+        const summary = (wasm as { decode_replay_summary: (bytes: Uint8Array) => { total_turns: number; grid_radius: number } }).decode_replay_summary(replayBytes);
+        return {
+          totalTurns: summary.total_turns,
+          config: { gridRadius: summary.grid_radius },
+        };
       }
+    } catch (err) {
+      console.error('Failed to decode replay summary via WASM:', err);
     }
+
+    return {
+      totalTurns: 0,
+      config: { gridRadius: 0 },
+    };
   }, [replayBytes]);
+
+  const maxTurnIndex = replayData ? Math.max(replayData.totalTurns - 1, 0) : 0;
+  const displayTurn = Math.min(currentTurn, maxTurnIndex);
 
   // Auto-advance when playing
   useEffect(() => {
@@ -53,11 +61,11 @@ const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gri
     setIsPlaying(false);
   };
 
-  if (!replayBytes || !replayData) {
+  if (!replayBytes || !replayData || replayData.totalTurns <= 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900 text-white">
         <div className="text-center">
-          <p className="mb-4 text-slate-400">No replay data available</p>
+          <p className="mb-4 text-slate-400">Replay data could not be decoded</p>
           <Button onClick={onClose}>Close</Button>
         </div>
       </div>
@@ -85,13 +93,13 @@ const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gri
             <div className="mb-4 text-6xl">🎬</div>
             <h2 className="mb-2 text-2xl font-bold">Replay Viewer</h2>
             <p className="mb-4 text-slate-400">
-              Turn {currentTurn + 1} of {replayData.totalTurns}
+              Turn {displayTurn + 1} of {replayData.totalTurns}
             </p>
             <div className="mb-4 h-2 w-64 bg-slate-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-indigo-500 transition-all duration-300"
                 style={{
-                  width: `${((currentTurn + 1) / replayData.totalTurns) * 100}%`,
+                  width: `${((displayTurn + 1) / replayData.totalTurns) * 100}%`,
                 }}
               />
             </div>
@@ -102,7 +110,7 @@ const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gri
 
           {/* Playback controls */}
           <div className="flex items-center justify-center gap-2">
-            <Button variant="ghost" onClick={handlePrevTurn} disabled={currentTurn === 0}>
+            <Button variant="ghost" onClick={handlePrevTurn} disabled={displayTurn === 0}>
               <SkipBack className="h-5 w-5" />
             </Button>
             <Button onClick={handlePlayPause}>
@@ -115,7 +123,7 @@ const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gri
             <Button
               variant="ghost"
               onClick={handleNextTurn}
-              disabled={currentTurn >= replayData.totalTurns - 1}
+              disabled={displayTurn >= replayData.totalTurns - 1}
             >
               <SkipForward className="h-5 w-5" />
             </Button>
@@ -129,11 +137,11 @@ const [replayData, setReplayData] = useState<{ totalTurns: number; config: { gri
 
           <div className="mt-6 rounded-lg bg-slate-800/50 border border-slate-700 p-4 max-w-md mx-auto">
             <p className="text-sm text-slate-400 mb-2">
-              <strong className="text-white">Note:</strong> Full replay viewer with game state visualization coming soon!
+              <strong className="text-white">Replay summary:</strong> {replayData.totalTurns} recorded turns.
             </p>
             <p className="text-xs text-slate-500">
-              This demonstrates the replay infrastructure. Full turn-by-turn playback with unit positions,
-              combat events, and camera controls will be added in the next iteration.
+              Grid radius: {replayData.config.gridRadius}. This view uses deterministic replay metadata from the
+              recorded match.
             </p>
           </div>
         </div>

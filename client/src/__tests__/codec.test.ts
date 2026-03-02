@@ -43,7 +43,7 @@ describe('codec', () => {
     const msg: ClientMessage = { type: 'ListRooms' };
     const encoded = encodeMessage(msg);
 
-    expect(wasmMock.encode_client_message).toHaveBeenCalledWith(msg);
+    expect(wasmMock.encode_client_message).toHaveBeenCalledWith('ListRooms');
     expect(encoded).toBeInstanceOf(ArrayBuffer);
   });
 

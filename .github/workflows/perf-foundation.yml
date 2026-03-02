@@ -19,9 +19,10 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build || pnpm build:ui
-      - run: pnpm perf:bundle
+          cache-dependency-path: client/pnpm-lock.yaml
+      - run: pnpm --prefix client install --frozen-lockfile
+      - run: pnpm --prefix client exec vite build
+      - run: node scripts/perf/bundle-report.mjs
 
   perf-build:
     runs-on: ubuntu-latest
@@ -36,8 +37,9 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm perf:build
+          cache-dependency-path: client/pnpm-lock.yaml
+      - run: pnpm --prefix client install --frozen-lockfile
+      - run: node scripts/perf/measure-build-time.mjs
 
   perf-lighthouse:
     runs-on: ubuntu-latest
@@ -52,9 +54,13 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build || pnpm build:ui
-      - run: pnpm perf:lhci || true
+          cache-dependency-path: client/pnpm-lock.yaml
+      - run: |
+          if [[ -f client/lighthouserc.json || -f lighthouserc.json ]]; then
+            echo "Lighthouse config detected but no LHCI script is wired for this repo."
+            exit 1
+          fi
+          echo "No lighthouse config found; skipping lighthouse job."
 
   perf-assets:
     runs-on: ubuntu-latest
@@ -77,8 +83,8 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm perf:memory
+          cache-dependency-path: client/pnpm-lock.yaml
+      - run: node --expose-gc scripts/perf/memory-smoke.mjs
 
   perf-api:
     if: ${{ vars.PERF_BASE_URL != '' }}

@@ -28,10 +28,11 @@ function nextBundle() {
 }
 
 function viteBundle() {
-  const distAssets = "dist/assets";
-  if (!existsSync(distAssets)) return null;
+  const candidates = ["dist/assets", "client/dist/assets"];
+  const distAssets = candidates.find((p) => existsSync(p));
+  if (!distAssets) return null;
 
-  const result = { source: "vite", totalBytes: 0, assets: {} };
+  const result = { source: "vite", outputDir: distAssets, totalBytes: 0, assets: {} };
   for (const file of readdirSync(distAssets)) {
     const full = path.join(distAssets, file);
     try {

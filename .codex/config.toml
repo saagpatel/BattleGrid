@@ -1,0 +1,7 @@
+# Project-level Codex configuration focused on stable execution paths.
+
+[features]
+collaboration_modes = true
+multi_agent = false
+unified_exec = false
+shell_snapshot = false

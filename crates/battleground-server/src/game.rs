@@ -77,6 +77,7 @@ impl GameInstance {
     }
 
     /// Get the current game phase.
+    #[allow(dead_code)]
     pub fn phase(&self) -> &GamePhase {
         &self.state.phase
     }

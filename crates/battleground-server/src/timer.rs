@@ -53,6 +53,7 @@ impl TurnTimer {
     }
 
     /// Get the remaining time in milliseconds.
+    #[allow(dead_code)]
     pub fn remaining_ms(&self) -> u64 {
         let now = Instant::now();
         if now >= self.deadline {

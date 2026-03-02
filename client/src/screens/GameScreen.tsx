@@ -12,10 +12,11 @@ import { ScoreBoard } from '../components/hud/ScoreBoard.js';
 import { OrderList } from '../components/hud/OrderList.js';
 import { GameLog } from '../components/hud/GameLog.js';
 import { MiniMap } from '../components/hud/MiniMap.js';
-import { CombatPreviewTooltip, buildCombatPreview } from '../components/hud/UnitPanel.js';
+import { CombatPreviewTooltip } from '../components/hud/combatPreview.js';
+import { buildCombatPreview } from '../components/hud/combatPreviewData.js';
 import { HelpOverlay } from '../components/HelpOverlay.js';
 import { HelpCircle } from 'lucide-react';
-import type { CombatPreviewData } from '../components/hud/UnitPanel.js';
+import type { CombatPreviewData } from '../components/hud/combatPreview.js';
 import type { HexCoord } from '../renderer/hexMath.js';
 import type { HexCell } from '../renderer/HexRenderer.js';
 import type { UnitRenderData } from '../renderer/UnitRenderer.js';
@@ -54,7 +55,7 @@ export function GameScreen() {
   useEffect(() => {
     if (events !== prevEventsRef.current && events.length > 0) {
       const totalDuration = queueSimEvents(animEngineRef.current, events, units, turn);
-      setIsAnimating(true);
+      queueMicrotask(() => setIsAnimating(true));
 
       // Clear animating flag after all animations complete
       const timer = setTimeout(() => {
@@ -122,66 +123,46 @@ export function GameScreen() {
     return cells.map((c) => ({ q: c.q, r: c.r }));
   }, [cells, playerId, wasmGame]);
 
-  // Combat preview tooltip state
-  const [combatPreview, setCombatPreview] = useState<{
+  const combatPreview = useMemo<{
     data: CombatPreviewData;
     screenX: number;
     screenY: number;
-  } | null>(null);
-
-  // Update combat preview when hovering over an enemy with a unit selected
-  useEffect(() => {
-    if (
-      selectedUnitId === null ||
-      hoveredHex === null ||
-      phase !== 'planning'
-    ) {
-      setCombatPreview(null);
-      return;
+  } | null>(() => {
+    if (selectedUnitId === null || hoveredHex === null || phase !== 'planning') {
+      return null;
     }
 
     const attacker = units.get(selectedUnitId);
     if (!attacker || attacker.owner !== playerId) {
-      setCombatPreview(null);
-      return;
+      return null;
     }
 
-    // Find enemy at hovered hex
     let defender: typeof attacker | undefined;
     units.forEach((u) => {
-      if (u.coord.q === hoveredHex.q && u.coord.r === hoveredHex.r && u.owner !== playerId && u.hp > 0) {
+      if (
+        u.coord.q === hoveredHex.q &&
+        u.coord.r === hoveredHex.r &&
+        u.owner !== playerId &&
+        u.hp > 0
+      ) {
         defender = u;
       }
     });
 
     if (!defender) {
-      setCombatPreview(null);
-      return;
+      return null;
     }
 
-    // Try WASM combat preview first
     const wasmPreview = wasmGame.previewCombat(attacker.id, defender.id);
-    if (wasmPreview) {
-      setCombatPreview({
-        data: buildCombatPreview(
-          attacker,
-          defender,
-          wasmPreview.damage_dealt,
-          wasmPreview.counter_damage,
-        ),
-        screenX: 0,
-        screenY: 0,
-      });
-    } else {
-      // Fallback: simple preview from unit stats
-      const damage = Math.max(0, attacker.attack - defender.defense);
-      const counter = Math.max(0, defender.attack - attacker.defense);
-      setCombatPreview({
-        data: buildCombatPreview(attacker, defender, damage, counter),
-        screenX: 0,
-        screenY: 0,
-      });
-    }
+    const [damage, counter] = wasmPreview
+      ? [wasmPreview.damage_dealt, wasmPreview.counter_damage]
+      : [Math.max(0, attacker.attack - defender.defense), Math.max(0, defender.attack - attacker.defense)];
+
+    return {
+      data: buildCombatPreview(attacker, defender, damage, counter),
+      screenX: 0,
+      screenY: 0,
+    };
   }, [selectedUnitId, hoveredHex, phase, units, playerId, wasmGame]);
 
   // Input is disabled during resolving phase and while animations play

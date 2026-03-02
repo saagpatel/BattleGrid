@@ -5,7 +5,7 @@ export interface HexCoord {
 }
 
 /** Terrain types that affect movement and line-of-sight */
-export type TerrainType = 'plain' | 'forest' | 'mountain' | 'water' | 'ruins';
+export type TerrainType = 'Plains' | 'Forest' | 'Mountain' | 'Water' | 'Fortress';
 
 /** A single hex cell on the grid */
 export interface HexCell {

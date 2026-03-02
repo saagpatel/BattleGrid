@@ -42,6 +42,17 @@ export interface RoomDetails {
 // ---- Messages FROM server ----
 
 export type ServerMessage =
+  | { type: 'RoomCreated'; roomId: string }
+  | { type: 'RoomJoinedAck'; roomId: string; playerId: number }
+  | { type: 'PlayerJoined'; playerName: string }
+  | { type: 'PlayerLeft'; playerName: string }
+  | { type: 'PlayerReady'; playerName: string }
+  | { type: 'AllPlayersReady' }
+  | { type: 'GameStarted'; playerId: number }
+  | { type: 'DeploymentPhaseStarted'; spawnZone: HexCoord[]; timerMs: number }
+  | { type: 'PlanningPhaseStarted'; turn: number; timerMs: number }
+  | { type: 'ResolutionStarted'; events: SimEvent[] }
+  | { type: 'TurnCompleted'; turn: number; units: UnitData[]; grid: GridData; phase: GamePhase }
   | { type: 'RoomList'; rooms: RoomInfo[] }
   | { type: 'RoomJoined'; room: RoomDetails }
   | { type: 'RoomUpdated'; room: RoomDetails }
@@ -50,7 +61,7 @@ export type ServerMessage =
   | { type: 'PlanningPhase'; turn: number; units: UnitData[]; timerMs: number }
   | { type: 'ResolutionPhase'; events: SimEvent[] }
   | { type: 'TurnResult'; turn: number; units: UnitData[] }
-  | { type: 'GameOver'; winner: number }
+  | { type: 'GameOver'; winner: number | null }
   | { type: 'ReplayData'; replayBytes: Uint8Array }
   | { type: 'Error'; message: string }
   | { type: 'Pong' };

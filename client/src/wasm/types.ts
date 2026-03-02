@@ -68,6 +68,7 @@ export type ServerMessage =
   | { ResolutionStarted: { events: Uint8Array } }
   | { TurnCompleted: { state: Uint8Array } }
   | { GameOver: { winner: number | null; reason: string } }
+  | { ReplayData: { replay_bytes: Uint8Array } }
   | { Error: { message: string } }
   | { RoomList: { rooms: RoomInfo[] } }
   | "Pong";
@@ -77,17 +78,16 @@ export type ClientMessage =
   | { JoinRoom: { room_id: string; player_name: string } }
   | { QuickMatch: { player_name: string } }
   | "SetReady"
-  | { SubmitDeployment: { placements: [number, HexCoord][] } }
+  | { SubmitDeployment: { placements: [number, number, number][] } }
   | { SubmitOrders: { for_turn: number; orders: Uint8Array } }
   | "ListRooms"
   | "Ping"
   | "LeaveRoom";
 
 export interface RoomInfo {
-  id: string;
+  room_id: string;
   player_count: number;
   max_players: number;
-  status: string;
 }
 
 export interface RoomConfig {

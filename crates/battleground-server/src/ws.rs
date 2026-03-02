@@ -304,7 +304,13 @@ async fn handle_binary_message(
                                 // Transition to planning phase
                                 let room_id_inner = room_id_clone.clone();
                                 let state_inner = state_clone.clone();
-                                if let Err(e) = handle_deployment_complete(room_id_inner, state_inner, &mut room).await {
+                                if let Err(e) = handle_deployment_complete(
+                                    room_id_inner,
+                                    state_inner,
+                                    &mut room,
+                                )
+                                .await
+                                {
                                     warn!("Error completing deployment after timeout: {e}");
                                 }
                             }
@@ -394,9 +400,7 @@ async fn handle_binary_message(
                 room.game = Some(game);
 
                 // Transition to planning phase
-                if let Err(e) = handle_deployment_complete(room_id.clone(), state.clone(), &mut room).await {
-                    return Err(e);
-                }
+                handle_deployment_complete(room_id.clone(), state.clone(), &mut room).await?;
 
                 // Take game back out for final restoration
                 game = room.game.take().expect("game exists");
@@ -447,7 +451,10 @@ async fn handle_binary_message(
             };
 
             if all_submitted {
-                if let Err(e) = resolve_and_broadcast(room_id.clone(), state.clone(), &mut room, &mut game).await {
+                if let Err(e) =
+                    resolve_and_broadcast(room_id.clone(), state.clone(), &mut room, &mut game)
+                        .await
+                {
                     room.game = Some(game);
                     return Err(e);
                 }
@@ -505,7 +512,14 @@ fn start_planning_timer(room_id: String, state: Arc<AppState>, room: &mut crate:
                     let mut game_taken = room.game.take().expect("game exists");
                     let room_id_inner = room_id_clone.clone();
                     let state_inner = state_clone.clone();
-                    if let Err(e) = resolve_and_broadcast(room_id_inner, state_inner, &mut room, &mut game_taken).await {
+                    if let Err(e) = resolve_and_broadcast(
+                        room_id_inner,
+                        state_inner,
+                        &mut room,
+                        &mut game_taken,
+                    )
+                    .await
+                    {
                         warn!("Error resolving turn after timeout: {e}");
                     }
                     room.game = Some(game_taken);
@@ -527,7 +541,10 @@ async fn handle_deployment_complete(
         handle.cancel();
     }
 
-    let game = room.game.as_ref().ok_or_else(|| ServerError::internal("game not initialized"))?;
+    let game = room
+        .game
+        .as_ref()
+        .ok_or_else(|| ServerError::internal("game not initialized"))?;
     let turn = game.turn();
     let timer_ms = game.turn_timer_ms;
 
@@ -577,8 +594,8 @@ async fn resolve_and_broadcast(
         let _ = room.broadcast(&game_over_msg).await;
 
         // Send replay data
-        let replay_bytes = bincode::serialize(&game.replay)
-            .map_err(|e| ServerError::internal(e.to_string()))?;
+        let replay_bytes =
+            bincode::serialize(&game.replay).map_err(|e| ServerError::internal(e.to_string()))?;
         let replay_msg = ServerMessage::ReplayData { replay_bytes };
         let _ = room.broadcast(&replay_msg).await;
 

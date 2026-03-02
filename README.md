@@ -137,6 +137,7 @@ make build         # Build everything
 make build-wasm    # Rebuild WASM bridge
 make dev           # Start dev servers with hot reload
 make lean-dev      # Start in low-disk mode with ephemeral caches
+make verify        # Run canonical repo verification contract
 make clean-heavy   # Remove heavy build artifacts only (keeps node_modules)
 make clean-local   # Remove all reproducible local caches/artifacts
 make clean         # Legacy cleanup target (includes node_modules)
@@ -155,6 +156,14 @@ Tradeoff:
 Cleanup commands:
 - `make clean-heavy`: safe targeted cleanup for heavy artifacts only.
 - `make clean-local`: full local cleanup of reproducible caches (including `client/node_modules`).
+
+Environment reproducibility:
+- Run `.codex/local-environments/setup.sh` to bootstrap a fresh local/worktree environment (toolchain check, client deps, WASM build).
+- Canonical verification commands are in `.codex/verify.commands`.
+- Verification report is written to `.codex/verify.last.json` by `.codex/scripts/run_verify_commands.sh`.
+
+Codex automation status schema:
+- `.codex/schemas/implementation-status.schema.json` can be used with `codex exec --output-schema` to produce machine-readable status artifacts.
 
 ## License
 

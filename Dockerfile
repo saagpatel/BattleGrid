@@ -1,11 +1,12 @@
 # Multi-stage build for BattleGrid
 
 # Stage 1: Build Rust server and WASM
-FROM rust:1.84-slim AS rust-builder
+FROM rust:1.88-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev curl && rm -rf /var/lib/apt/lists/*
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-pack
+# Keep wasm-pack install reproducible and compatible with Rust 1.84 image.
+RUN cargo install wasm-pack --version 0.13.1 --locked
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
@@ -36,7 +37,7 @@ RUN pnpm build
 # Stage 3: Production runtime
 FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

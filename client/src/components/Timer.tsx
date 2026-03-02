@@ -8,19 +8,20 @@ interface TimerProps {
 
 export function Timer({ durationMs, onExpire, className = '' }: TimerProps) {
   const [remainingMs, setRemainingMs] = useState(durationMs);
-  const startRef = useRef(Date.now());
+  const startRef = useRef(0);
+  const durationRef = useRef(durationMs);
   const expiredRef = useRef(false);
 
   useEffect(() => {
+    durationRef.current = durationMs;
     startRef.current = Date.now();
     expiredRef.current = false;
-    setRemainingMs(durationMs);
   }, [durationMs]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const elapsed = Date.now() - startRef.current;
-      const left = Math.max(0, durationMs - elapsed);
+      const left = Math.max(0, durationRef.current - elapsed);
       setRemainingMs(left);
 
       if (left <= 0 && !expiredRef.current) {
@@ -30,7 +31,7 @@ export function Timer({ durationMs, onExpire, className = '' }: TimerProps) {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [durationMs, onExpire]);
+  }, [onExpire]);
 
   const totalSeconds = Math.ceil(remainingMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);

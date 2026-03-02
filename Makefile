@@ -1,4 +1,4 @@
-.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev lean-dev test clean clean-heavy clean-local prune
+.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev lean-dev test verify clean clean-heavy clean-local prune
 
 setup:
 	@./setup.sh
@@ -9,24 +9,26 @@ build-core:
 	cargo build -p battleground-core
 
 build-wasm:
-	wasm-pack build crates/battleground-wasm --target web --out-dir ../../client/src/wasm/pkg
+	@./scripts/build-wasm-safe.sh
 
 build-server:
 	cargo build -p battleground-server
 
 build-client:
-	cd client && pnpm install && pnpm build
+	pnpm --prefix client install
+	pnpm --prefix client exec tsc -b
+	pnpm --prefix client exec vite build
 
 dev-server:
 	cargo run -p battleground-server
 
 dev-client:
-	cd client && pnpm dev
+	pnpm --prefix client exec vite
 
 dev:
 	@make build-wasm
 	@cargo run -p battleground-server &
-	@cd client && pnpm dev &
+	@pnpm --prefix client exec vite &
 	@echo "Server: http://localhost:3001  |  Client: http://localhost:5173"
 	@wait
 
@@ -35,7 +37,10 @@ lean-dev:
 
 test:
 	cargo test --workspace
-	cd client && pnpm test
+	pnpm --prefix client exec vitest run
+
+verify:
+	@./.codex/scripts/run_verify_commands.sh
 
 clean:
 	cargo clean

@@ -26,6 +26,10 @@ fi
 # Install client deps
 pnpm --prefix client install
 
+# Path-delimiter-safe client tool smoke checks
+pnpm --prefix client exec tsc --version >/dev/null
+pnpm --prefix client exec vite --version >/dev/null
+
 # Build WASM
 make build-wasm
 
