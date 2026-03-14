@@ -5,6 +5,8 @@
 # Node
 node_modules/
 dist/
+client/test-results/
+playwright-report/
 
 # WASM
 **/pkg/

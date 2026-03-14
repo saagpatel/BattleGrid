@@ -10,7 +10,7 @@ if ! command -v rustup &>/dev/null; then
 fi
 
 rustup target add wasm32-unknown-unknown 2>/dev/null || true
-command -v wasm-pack &>/dev/null || cargo install wasm-pack
+command -v wasm-pack &>/dev/null || ./scripts/cargo-safe.sh install wasm-pack
 
 # Node.js check
 if ! command -v node &>/dev/null; then
@@ -24,11 +24,12 @@ if ! command -v pnpm &>/dev/null; then
 fi
 
 # Install client deps
-pnpm --prefix client install
+./scripts/pnpm-safe.sh --prefix client install
+./scripts/client-safe.sh playwright install chromium
 
 # Path-delimiter-safe client tool smoke checks
-pnpm --prefix client exec tsc --version >/dev/null
-pnpm --prefix client exec vite --version >/dev/null
+./scripts/client-safe.sh tsc --version >/dev/null
+./scripts/client-safe.sh vite --version >/dev/null
 
 # Build WASM
 make build-wasm

@@ -88,6 +88,9 @@ make dev
 # Server: http://localhost:3001
 # Client: http://localhost:5173
 
+# Run the full browser smoke with real deployment + real canvas order entry
+make smoke
+
 # Low-disk mode (ephemeral build caches + auto cleanup on exit)
 make lean-dev
 ```
@@ -99,6 +102,9 @@ Open two browser tabs. Create a room in one, join with the room code in the othe
 ```bash
 docker compose up
 # Open http://localhost:8080
+
+# Or run the production-style Docker smoke and tear the stack back down
+make smoke-docker
 ```
 
 ## Project Structure
@@ -133,6 +139,8 @@ The simultaneous resolution model creates deep strategic decisions:
 
 ```bash
 make test          # Run all 328 tests
+make smoke         # Native smoke: real deployment + real canvas order entry
+make smoke-docker  # Docker smoke: build, boot, run smoke, teardown
 make build         # Build everything
 make build-wasm    # Rebuild WASM bridge
 make dev           # Start dev servers with hot reload
@@ -148,6 +156,7 @@ make clean         # Legacy cleanup target (includes node_modules)
 - `make dev`: fastest repeat startup when caches are warm, but it keeps build outputs around (for example `target/`, `client/src/wasm/pkg`, Vite caches).
 - `make lean-dev`: runs with temporary cache dirs (`/tmp/battlegrid-lean.*`) and automatically cleans heavy build artifacts when you stop the app.
 - `make lean-dev` also works around macOS path-delimiter issues if your project path contains `:`.
+- `make smoke-docker` validates the production bundle, including the shipped WASM assets, against `http://localhost:8080`.
 
 Tradeoff:
 - Lean mode uses less persistent disk, but startup can be slower because Rust and Vite cache data is rebuilt more often.
@@ -161,6 +170,9 @@ Environment reproducibility:
 - Run `.codex/local-environments/setup.sh` to bootstrap a fresh local/worktree environment (toolchain check, client deps, WASM build).
 - Canonical verification commands are in `.codex/verify.commands`.
 - Verification report is written to `.codex/verify.last.json` by `.codex/scripts/run_verify_commands.sh`.
+- Browser smoke uses `./scripts/client-safe.sh playwright test --config=playwright.config.ts` and requires Playwright's Chromium browser to be installed locally.
+- The smoke tests use real browser clicks on the deployment/game canvases. They read hidden state snapshots from the UI to choose valid targets, but they do not use dev-only control hooks.
+- If your repo path contains `:`, the repo’s Cargo, pnpm, and client-binary wrappers now route commands through a temporary safe symlink so setup, verify, dev, and smoke flows remain stable without renaming the checkout.
 
 Codex automation status schema:
 - `.codex/schemas/implementation-status.schema.json` can be used with `codex exec --output-schema` to produce machine-readable status artifacts.

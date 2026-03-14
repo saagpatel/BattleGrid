@@ -4,20 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-LEAN_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/battlegrid-lean.XXXXXX")"
-LEAN_CARGO_TARGET_DIR="$LEAN_TMP_DIR/cargo-target"
-LEAN_VITE_CACHE_DIR="$LEAN_TMP_DIR/vite-cache"
-
 SERVER_PID=""
 CLIENT_PID=""
-_LEAN_CLEANED=0
+_DEV_CLEANED=0
 
 cleanup() {
   local exit_code=$?
-  if [[ "$_LEAN_CLEANED" -eq 1 ]]; then
+  if [[ "$_DEV_CLEANED" -eq 1 ]]; then
     return
   fi
-  _LEAN_CLEANED=1
+  _DEV_CLEANED=1
 
   set +e
   if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
@@ -29,10 +25,6 @@ cleanup() {
   wait "$CLIENT_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
 
-  rm -rf "$LEAN_TMP_DIR"
-  "$ROOT_DIR/scripts/clean-heavy.sh" >/dev/null 2>&1 || true
-
-  echo "Lean dev cleanup completed."
   exit "$exit_code"
 }
 
@@ -43,15 +35,13 @@ if [[ ! -d "$ROOT_DIR/client/node_modules" ]]; then
   "$ROOT_DIR/scripts/pnpm-safe.sh" --prefix client install
 fi
 
-echo "Lean cache dir: $LEAN_TMP_DIR"
+make build-wasm
 
-CARGO_TARGET_DIR="$LEAN_CARGO_TARGET_DIR" make build-wasm
-
-CARGO_TARGET_DIR="$LEAN_CARGO_TARGET_DIR" "$ROOT_DIR/scripts/cargo-safe.sh" run -p battleground-server &
+"$ROOT_DIR/scripts/cargo-safe.sh" run -p battleground-server &
 SERVER_PID=$!
 
 # Uses a safe wrapper so client tooling still works when the repo path contains ':'.
-VITE_CACHE_DIR="$LEAN_VITE_CACHE_DIR" "$ROOT_DIR/scripts/client-safe.sh" vite &
+"$ROOT_DIR/scripts/client-safe.sh" vite &
 CLIENT_PID=$!
 
 echo "Server: http://localhost:3001  |  Client: http://localhost:5173"

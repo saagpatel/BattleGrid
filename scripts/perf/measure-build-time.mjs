@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
+const clientSafe = "./scripts/client-safe.sh";
 const start = Date.now();
 const typecheck = spawnSync(
-  "pnpm",
-  ["--prefix", "client", "exec", "tsc", "-b"],
+  clientSafe,
+  ["tsc", "-b"],
   {
     stdio: "inherit",
   },
@@ -13,7 +14,7 @@ if (typecheck.status !== 0) {
   process.exit(typecheck.status ?? 1);
 }
 
-const build = spawnSync("pnpm", ["--prefix", "client", "exec", "vite", "build"], {
+const build = spawnSync(clientSafe, ["vite", "build"], {
   stdio: "inherit",
 });
 const end = Date.now();
@@ -25,7 +26,7 @@ writeFileSync(
     {
       buildMs: end - start,
       capturedAt: new Date().toISOString(),
-      command: "pnpm --prefix client exec tsc -b && pnpm --prefix client exec vite build",
+      command: "./scripts/client-safe.sh tsc -b && ./scripts/client-safe.sh vite build",
     },
     null,
     2,
