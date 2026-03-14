@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BattleGrid Implementation Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "status",
+    "summary",
+    "verification",
+    "next_actions"
+  ],
+  "properties": {
+    "project": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["done", "waiting", "blocked"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failed"],
+      "properties": {
+        "passed": { "type": "array", "items": { "type": "string" } },
+        "failed": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

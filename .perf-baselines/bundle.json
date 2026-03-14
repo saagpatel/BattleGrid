@@ -1,0 +1,10 @@
+{
+  "source": "vite",
+  "outputDir": "client/dist/assets",
+  "totalBytes": 286973,
+  "assets": {
+    "index-C2i4V6LE.css": 25639,
+    "index-CEnikpj-.js": 261334
+  },
+  "capturedAt": "2026-03-02T00:12:50.453Z"
+}

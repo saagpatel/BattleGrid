@@ -7,15 +7,17 @@ import { AnimationEngine } from '../renderer/AnimationEngine.js';
 import { queueSimEvents } from '../renderer/eventAnimator.js';
 import { useWasmGame } from '../wasm/useWasmGame.js';
 import { TurnBar } from '../components/hud/TurnBar.js';
+import { UnitPicker } from '../components/hud/UnitPicker.js';
 import { UnitPanel } from '../components/hud/UnitPanel.js';
 import { ScoreBoard } from '../components/hud/ScoreBoard.js';
 import { OrderList } from '../components/hud/OrderList.js';
 import { GameLog } from '../components/hud/GameLog.js';
 import { MiniMap } from '../components/hud/MiniMap.js';
-import { CombatPreviewTooltip, buildCombatPreview } from '../components/hud/UnitPanel.js';
+import { CombatPreviewTooltip } from '../components/hud/combatPreview.js';
+import { buildCombatPreview } from '../components/hud/combatPreviewData.js';
 import { HelpOverlay } from '../components/HelpOverlay.js';
 import { HelpCircle } from 'lucide-react';
-import type { CombatPreviewData } from '../components/hud/UnitPanel.js';
+import type { CombatPreviewData } from '../components/hud/combatPreview.js';
 import type { HexCoord } from '../renderer/hexMath.js';
 import type { HexCell } from '../renderer/HexRenderer.js';
 import type { UnitRenderData } from '../renderer/UnitRenderer.js';
@@ -29,6 +31,7 @@ export function GameScreen() {
   const playerId = useGameStore((s) => s.playerId);
   const spawnZone = useGameStore((s) => s.spawnZone);
   const events = useGameStore((s) => s.events);
+  const stateBytes = useGameStore((s) => s.stateBytes);
   const addOrder = useGameStore((s) => s.addOrder);
   const clearOrders = useGameStore((s) => s.clearOrders);
 
@@ -54,7 +57,7 @@ export function GameScreen() {
   useEffect(() => {
     if (events !== prevEventsRef.current && events.length > 0) {
       const totalDuration = queueSimEvents(animEngineRef.current, events, units, turn);
-      setIsAnimating(true);
+      queueMicrotask(() => setIsAnimating(true));
 
       // Clear animating flag after all animations complete
       const timer = setTimeout(() => {
@@ -65,6 +68,12 @@ export function GameScreen() {
       return () => clearTimeout(timer);
     }
   }, [events, units, turn]);
+
+  useEffect(() => {
+    if (stateBytes) {
+      wasmGame.updateState(stateBytes);
+    }
+  }, [stateBytes, wasmGame]);
 
   // Convert grid cells to renderer format
   const cells: HexCell[] = useMemo(() => {
@@ -122,67 +131,110 @@ export function GameScreen() {
     return cells.map((c) => ({ q: c.q, r: c.r }));
   }, [cells, playerId, wasmGame]);
 
-  // Combat preview tooltip state
-  const [combatPreview, setCombatPreview] = useState<{
+  const combatPreview = useMemo<{
     data: CombatPreviewData;
     screenX: number;
     screenY: number;
-  } | null>(null);
-
-  // Update combat preview when hovering over an enemy with a unit selected
-  useEffect(() => {
-    if (
-      selectedUnitId === null ||
-      hoveredHex === null ||
-      phase !== 'planning'
-    ) {
-      setCombatPreview(null);
-      return;
+  } | null>(() => {
+    if (selectedUnitId === null || hoveredHex === null || phase !== 'planning') {
+      return null;
     }
 
     const attacker = units.get(selectedUnitId);
     if (!attacker || attacker.owner !== playerId) {
-      setCombatPreview(null);
-      return;
+      return null;
     }
 
-    // Find enemy at hovered hex
     let defender: typeof attacker | undefined;
     units.forEach((u) => {
-      if (u.coord.q === hoveredHex.q && u.coord.r === hoveredHex.r && u.owner !== playerId && u.hp > 0) {
+      if (
+        u.coord.q === hoveredHex.q &&
+        u.coord.r === hoveredHex.r &&
+        u.owner !== playerId &&
+        u.hp > 0
+      ) {
         defender = u;
       }
     });
 
     if (!defender) {
-      setCombatPreview(null);
-      return;
+      return null;
     }
 
-    // Try WASM combat preview first
     const wasmPreview = wasmGame.previewCombat(attacker.id, defender.id);
-    if (wasmPreview) {
-      setCombatPreview({
-        data: buildCombatPreview(
-          attacker,
-          defender,
-          wasmPreview.damage_dealt,
-          wasmPreview.counter_damage,
-        ),
-        screenX: 0,
-        screenY: 0,
-      });
-    } else {
-      // Fallback: simple preview from unit stats
-      const damage = Math.max(0, attacker.attack - defender.defense);
-      const counter = Math.max(0, defender.attack - attacker.defense);
-      setCombatPreview({
-        data: buildCombatPreview(attacker, defender, damage, counter),
-        screenX: 0,
-        screenY: 0,
-      });
-    }
+    const [damage, counter] = wasmPreview
+      ? [wasmPreview.damage_dealt, wasmPreview.counter_damage]
+      : [Math.max(0, attacker.attack - defender.defense), Math.max(0, defender.attack - attacker.defense)];
+
+    return {
+      data: buildCombatPreview(attacker, defender, damage, counter),
+      screenX: 0,
+      screenY: 0,
+    };
   }, [selectedUnitId, hoveredHex, phase, units, playerId, wasmGame]);
+
+  const smokeMoveCandidate = useMemo(() => {
+    if (phase !== 'planning' || playerId === null) return null;
+
+    const occupied = new Set(
+      [...units.values()].map((unit) => `${unit.coord.q},${unit.coord.r}`),
+    );
+
+    return [...units.values()]
+      .filter((unit) => unit.owner === playerId && unit.hp > 0)
+      .sort((a, b) => a.id - b.id)
+      .map((unit) => {
+        const target = wasmGame
+          .getReachableHexes(unit.id)
+          .find(
+            (hex) =>
+              !(hex.q === unit.coord.q && hex.r === unit.coord.r) &&
+              !occupied.has(`${hex.q},${hex.r}`),
+          );
+
+        if (!target) return null;
+
+        return {
+          unitId: unit.id,
+          from: unit.coord,
+          to: target,
+        };
+      })
+      .find(Boolean);
+  }, [phase, playerId, units, wasmGame]);
+
+  const gameSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        phase,
+        turn,
+        playerId,
+        selectedUnitId,
+        moveRangeHexes,
+        attackRangeHexes,
+        smokeMoveCandidate,
+        orders,
+        units: [...units.values()]
+          .map((unit) => ({
+            id: unit.id,
+            owner: unit.owner,
+            hp: unit.hp,
+            coord: unit.coord,
+          }))
+          .sort((a, b) => a.id - b.id),
+      }),
+    [
+      phase,
+      turn,
+      playerId,
+      selectedUnitId,
+      moveRangeHexes,
+      attackRangeHexes,
+      smokeMoveCandidate,
+      orders,
+      units,
+    ],
+  );
 
   // Input is disabled during resolving phase and while animations play
   const inputDisabled = phase === 'resolving' || phase === 'finished' || isAnimating;
@@ -272,7 +324,7 @@ export function GameScreen() {
   }, [phase, orders, isAnimating, showHelp, selectUnit, handleSubmitOrders]);
 
   return (
-    <div className="flex h-screen flex-col bg-slate-900 text-white">
+    <div data-testid="game-screen" className="flex h-screen flex-col bg-slate-900 text-white">
       {/* Top bar */}
       <TurnBar onSubmitOrders={handleSubmitOrders} onAutoSubmit={handleAutoSubmit} />
 
@@ -311,6 +363,7 @@ export function GameScreen() {
         )}
 
         {/* HUD overlays */}
+        <UnitPicker />
         <UnitPanel />
         <ScoreBoard />
         <OrderList />
@@ -339,6 +392,10 @@ export function GameScreen() {
 
       {/* Help overlay */}
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+
+      <pre data-testid="game-state" className="hidden">
+        {gameSnapshot}
+      </pre>
     </div>
   );
 }

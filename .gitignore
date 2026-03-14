@@ -5,6 +5,8 @@
 # Node
 node_modules/
 dist/
+client/test-results/
+playwright-report/
 
 # WASM
 **/pkg/
@@ -31,3 +33,7 @@ Thumbs.db
 *.o
 *.so
 *.dylib
+
+# Local verification/perf artifacts
+.codex/verify.last.json
+.perf-results/

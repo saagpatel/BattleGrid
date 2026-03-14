@@ -1,4 +1,4 @@
-.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev lean-dev test clean clean-heavy clean-local prune
+.PHONY: setup build build-core build-wasm build-server build-client dev-server dev-client dev lean-dev test smoke smoke-docker verify clean clean-heavy clean-local prune
 
 setup:
 	@./setup.sh
@@ -6,36 +6,43 @@ setup:
 build: build-core build-wasm build-server build-client
 
 build-core:
-	cargo build -p battleground-core
+	@./scripts/cargo-safe.sh build -p battleground-core
 
 build-wasm:
-	wasm-pack build crates/battleground-wasm --target web --out-dir ../../client/src/wasm/pkg
+	@./scripts/build-wasm-safe.sh
 
 build-server:
-	cargo build -p battleground-server
+	@./scripts/cargo-safe.sh build -p battleground-server
 
 build-client:
-	cd client && pnpm install && pnpm build
+	@./scripts/pnpm-safe.sh --prefix client install
+	@./scripts/client-safe.sh tsc -b
+	@./scripts/client-safe.sh vite build
 
 dev-server:
-	cargo run -p battleground-server
+	@./scripts/cargo-safe.sh run -p battleground-server
 
 dev-client:
-	cd client && pnpm dev
+	@./scripts/client-safe.sh vite
 
 dev:
-	@make build-wasm
-	@cargo run -p battleground-server &
-	@cd client && pnpm dev &
-	@echo "Server: http://localhost:3001  |  Client: http://localhost:5173"
-	@wait
+	@./scripts/dev.sh
 
 lean-dev:
 	@./scripts/dev-lean.sh
 
 test:
-	cargo test --workspace
-	cd client && pnpm test
+	@./scripts/cargo-safe.sh test --workspace
+	@./scripts/client-safe.sh vitest run
+
+smoke:
+	@./scripts/client-safe.sh playwright test --config=playwright.config.ts
+
+smoke-docker:
+	@./scripts/smoke-docker.sh
+
+verify:
+	@./.codex/scripts/run_verify_commands.sh
 
 clean:
 	cargo clean

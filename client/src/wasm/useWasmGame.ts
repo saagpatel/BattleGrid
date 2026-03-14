@@ -6,7 +6,7 @@
  * Falls back gracefully when WASM is not loaded.
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { getWasm } from './loader.js';
 import type { ReachableHex, CombatPreview } from './types.js';
 import type { HexCoord } from '../types/game.js';
@@ -57,6 +57,7 @@ function hexesInRange(center: HexCoord, range: number): HexCoord[] {
 
 export function useWasmGame(): WasmGameApi {
   const gameRef = useRef<WasmGameHandle | null>(null);
+  const [, setVersion] = useState(0);
 
   const updateState = useCallback((stateBytes: Uint8Array): boolean => {
     const wasm = getWasm() as Record<string, unknown> | null;
@@ -71,6 +72,7 @@ export function useWasmGame(): WasmGameApi {
         if (!WasmGame) return false;
         gameRef.current = new WasmGame(stateBytes);
       }
+      setVersion((version) => version + 1);
       return true;
     } catch (err) {
       console.warn('Failed to update WASM game state:', err);

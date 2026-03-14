@@ -1,5 +1,21 @@
-# Replace these commands with your repo's canonical checks.
-# Keep order strict: fast static checks first, then behavioral, then docs drift.
-npm run lint
-npm run test
-npm run docs:check
+# codex-os-managed
+# Core repository + governance checks
+test -f .codex/codex-os.manifest.json
+test -f AGENTS.md
+
+# Environment/toolchain preflight
+command -v cargo >/dev/null
+command -v pnpm >/dev/null
+command -v wasm-pack >/dev/null
+
+# Canonical Rust gates
+./scripts/cargo-safe.sh fmt --check
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/battlegrid-verify-target}" ./scripts/cargo-safe.sh clippy --workspace -- -D warnings
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/battlegrid-verify-target}" ./scripts/cargo-safe.sh test --workspace
+
+# Canonical client gates (path-delimiter safe)
+./scripts/client-safe.sh tsc -b
+./scripts/client-safe.sh eslint .
+./scripts/client-safe.sh vitest run
+./scripts/client-safe.sh vite build
+./scripts/client-safe.sh playwright test --config=playwright.config.ts

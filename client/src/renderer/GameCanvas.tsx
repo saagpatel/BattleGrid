@@ -6,7 +6,7 @@
  *   Mouse event → Camera.screenToWorld → pixelToHex → hex lookup → UI action
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { Camera } from './Camera.js';
 import { HexRenderer } from './HexRenderer.js';
 import type { HexCell } from './HexRenderer.js';
@@ -15,7 +15,7 @@ import type { UnitRenderData } from './UnitRenderer.js';
 import { OverlayRenderer } from './OverlayRenderer.js';
 import { FogRenderer } from './FogRenderer.js';
 import { AnimationEngine } from './AnimationEngine.js';
-import { pixelToHex } from './hexMath.js';
+import { hexToPixel, pixelToHex } from './hexMath.js';
 import type { HexCoord } from './hexMath.js';
 import { useGameStore } from '../stores/gameStore.js';
 import { useUIStore } from '../stores/uiStore.js';
@@ -24,6 +24,8 @@ import { useUIStore } from '../stores/uiStore.js';
 const HEX_SIZE = 32;
 
 export interface GameCanvasProps {
+  testId?: string;
+  autoFit?: boolean;
   cells: HexCell[];
   units: UnitRenderData[];
   visibleHexes: HexCoord[];
@@ -39,6 +41,8 @@ export interface GameCanvasProps {
 }
 
 export function GameCanvas({
+  testId,
+  autoFit = false,
   cells,
   units,
   visibleHexes,
@@ -62,11 +66,17 @@ export function GameCanvas({
   const rafRef = useRef<number>(0);
   const isDraggingRef = useRef(false);
   const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cameraDebug, setCameraDebug] = useState('{"x":0,"y":0,"zoom":1}');
 
   const selectedUnitId = useUIStore((s) => s.selectedUnitId);
   const hoveredHex = useUIStore((s) => s.hoveredHex);
   const setHoveredHex = useUIStore((s) => s.setHoveredHex);
   const phase = useGameStore((s) => s.phase);
+
+  const syncCameraDebug = useCallback((camera: Camera | null) => {
+    if (!camera) return;
+    setCameraDebug(JSON.stringify(camera.getState()));
+  }, []);
 
   // Initialize renderers once
   useEffect(() => {
@@ -78,6 +88,7 @@ export function GameCanvas({
     canvas.height = rect.height * devicePixelRatio;
 
     cameraRef.current = new Camera(canvas.width, canvas.height);
+    syncCameraDebug(cameraRef.current);
     hexRendererRef.current = new HexRenderer(HEX_SIZE);
     unitRendererRef.current = new UnitRenderer(HEX_SIZE);
     overlayRendererRef.current = new OverlayRenderer(HEX_SIZE);
@@ -87,7 +98,35 @@ export function GameCanvas({
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [syncCameraDebug]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    if (!autoFit || !canvas || !camera || cells.length === 0) return;
+
+    const centers = cells.map((cell) => hexToPixel(cell.q, cell.r, HEX_SIZE));
+    const minX = Math.min(...centers.map((center) => center.x));
+    const maxX = Math.max(...centers.map((center) => center.x));
+    const minY = Math.min(...centers.map((center) => center.y));
+    const maxY = Math.max(...centers.map((center) => center.y));
+    const padding = HEX_SIZE * 2;
+
+    const contentWidth = Math.max(maxX - minX + padding * 2, HEX_SIZE * 4);
+    const contentHeight = Math.max(maxY - minY + padding * 2, HEX_SIZE * 4);
+    const fitZoom = Math.min(
+      canvas.width / contentWidth,
+      canvas.height / contentHeight,
+      1.75,
+    );
+
+    camera.setState({
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      zoom: fitZoom,
+    });
+    syncCameraDebug(camera);
+  }, [autoFit, cells, syncCameraDebug]);
 
   // Handle resize
   useEffect(() => {
@@ -100,12 +139,13 @@ export function GameCanvas({
         canvas.width = width * devicePixelRatio;
         canvas.height = height * devicePixelRatio;
         cameraRef.current?.setViewport(canvas.width, canvas.height);
+        syncCameraDebug(cameraRef.current);
       }
     });
     observer.observe(canvas);
 
     return () => observer.disconnect();
-  }, []);
+  }, [syncCameraDebug]);
 
   // Render loop
   useEffect(() => {
@@ -291,6 +331,8 @@ export function GameCanvas({
 
   return (
     <canvas
+      data-testid={testId ?? 'game-canvas'}
+      data-camera={cameraDebug}
       ref={canvasRef}
       className="h-full w-full cursor-crosshair"
       onMouseDown={handleMouseDown}

@@ -46,7 +46,7 @@ export function WaitingRoom() {
   const amReady = me?.ready ?? false;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-6 text-white">
+    <div data-testid="waiting-room" className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-6 text-white">
       <h1 className="mb-2 text-2xl font-bold">{currentRoom.name}</h1>
 
       {/* Room code */}
@@ -89,10 +89,10 @@ export function WaitingRoom() {
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Button onClick={handleReady} variant={amReady ? 'secondary' : 'primary'}>
+        <Button data-testid="ready-toggle" onClick={handleReady} variant={amReady ? 'secondary' : 'primary'}>
           {amReady ? 'Unready' : 'Ready'}
         </Button>
-        <Button variant="danger" onClick={handleLeave}>
+        <Button data-testid="leave-room" variant="danger" onClick={handleLeave}>
           <LogOut className="mr-1 inline h-4 w-4" />
           Leave
         </Button>

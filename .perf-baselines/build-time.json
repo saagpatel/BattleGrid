@@ -1,0 +1,5 @@
+{
+  "buildMs": 2548,
+  "capturedAt": "2026-03-02T00:03:18.445Z",
+  "command": "pnpm --prefix client exec tsc -b && pnpm --prefix client exec vite build"
+}

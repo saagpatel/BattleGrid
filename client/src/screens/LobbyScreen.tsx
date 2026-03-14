@@ -46,7 +46,7 @@ export function LobbyScreen() {
   }, [playerName, send]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-slate-900 p-6 text-white">
+    <div data-testid="lobby-screen" className="flex min-h-screen flex-col items-center bg-slate-900 p-6 text-white">
       <h1 className="mb-8 text-4xl font-bold tracking-tight">BattleGrid</h1>
 
       {/* Player name input */}
@@ -56,6 +56,7 @@ export function LobbyScreen() {
         </label>
         <input
           id="player-name"
+          data-testid="player-name"
           type="text"
           value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
@@ -77,11 +78,12 @@ export function LobbyScreen() {
 
       {/* Action buttons */}
       <div className="mb-6 flex gap-3">
-        <Button onClick={() => setShowCreate(true)} disabled={status !== 'connected'}>
+        <Button data-testid="create-room" onClick={() => setShowCreate(true)} disabled={status !== 'connected'}>
           <Plus className="mr-1 inline h-4 w-4" />
           Create Room
         </Button>
         <Button
+          data-testid="quick-match"
           variant="secondary"
           onClick={handleQuickMatch}
           disabled={status !== 'connected'}
@@ -89,7 +91,7 @@ export function LobbyScreen() {
           <Zap className="mr-1 inline h-4 w-4" />
           Quick Match
         </Button>
-        <Button variant="ghost" onClick={handleRefresh} disabled={status !== 'connected'}>
+        <Button data-testid="refresh-rooms" variant="ghost" onClick={handleRefresh} disabled={status !== 'connected'}>
           <RefreshCw className="mr-1 inline h-4 w-4" />
           Refresh
         </Button>
@@ -111,6 +113,7 @@ export function LobbyScreen() {
               return (
                 <li
                   key={room.roomId}
+                  data-testid={`room-${room.roomId}`}
                   className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-800 px-4 py-3"
                 >
                   <div>
@@ -120,6 +123,7 @@ export function LobbyScreen() {
                     </span>
                   </div>
                   <Button
+                    data-testid={`join-room-${room.roomId}`}
                     size="sm"
                     onClick={() => handleJoin(room.roomId)}
                     disabled={roomStatus !== 'waiting' || room.playerCount >= room.maxPlayers}

@@ -40,18 +40,18 @@ trap cleanup EXIT INT TERM
 
 if [[ ! -d "$ROOT_DIR/client/node_modules" ]]; then
   echo "client/node_modules missing; installing client dependencies..."
-  pnpm --prefix "$ROOT_DIR/client" install
+  "$ROOT_DIR/scripts/pnpm-safe.sh" --prefix client install
 fi
 
 echo "Lean cache dir: $LEAN_TMP_DIR"
 
 CARGO_TARGET_DIR="$LEAN_CARGO_TARGET_DIR" make build-wasm
 
-CARGO_TARGET_DIR="$LEAN_CARGO_TARGET_DIR" cargo run -p battleground-server &
+CARGO_TARGET_DIR="$LEAN_CARGO_TARGET_DIR" "$ROOT_DIR/scripts/cargo-safe.sh" run -p battleground-server &
 SERVER_PID=$!
 
-# Uses pnpm exec to avoid PATH issues when the repo path contains ':'.
-VITE_CACHE_DIR="$LEAN_VITE_CACHE_DIR" pnpm --prefix "$ROOT_DIR/client" exec vite &
+# Uses a safe wrapper so client tooling still works when the repo path contains ':'.
+VITE_CACHE_DIR="$LEAN_VITE_CACHE_DIR" "$ROOT_DIR/scripts/client-safe.sh" vite &
 CLIENT_PID=$!
 
 echo "Server: http://localhost:3001  |  Client: http://localhost:5173"

@@ -14,9 +14,23 @@ const changed = execSync(`git diff --name-only ${baseRef}...HEAD`, { encoding: '
   .map((line) => line.trim())
   .filter(Boolean);
 
-const isProdCode = (file) => /^(src|app|server|api|lib)\//.test(file) && !/\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
-const isTest = (file) => /^tests\//.test(file) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
-const isDoc = (file) => /^docs\//.test(file) || /^openapi\//.test(file) || file === 'README.md';
+const isProdCode = (file) =>
+  (/^(src|app|server|api|lib)\//.test(file) ||
+    /^client\/src\//.test(file) ||
+    /^crates\/[^/]+\/src\//.test(file)) &&
+  !/\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
+
+const isTest = (file) =>
+  /^tests\//.test(file) ||
+  /^client\/e2e\//.test(file) ||
+  /^client\/src\/__tests__\//.test(file) ||
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(file);
+
+const isDoc = (file) =>
+  /^docs\//.test(file) ||
+  /^openapi\//.test(file) ||
+  file === 'README.md' ||
+  file === 'AGENTS.md';
 
 const prodChanged = changed.some(isProdCode);
 const testsChanged = changed.some(isTest);

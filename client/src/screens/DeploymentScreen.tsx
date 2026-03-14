@@ -39,6 +39,16 @@ export function DeploymentScreen() {
   });
 
   const allPlaced = deployments.length >= availableUnits.length;
+  const deploymentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        spawnZone,
+        availableUnits,
+        deployments,
+        allPlaced,
+      }),
+    [spawnZone, availableUnits, deployments, allPlaced],
+  );
 
   // Create cells for the spawn zone hexes
   const cells = useMemo<HexCell[]>(() => {
@@ -91,10 +101,10 @@ export function DeploymentScreen() {
   }, [send, deployments]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-slate-900 p-6 text-white">
+    <div data-testid="deployment-screen" className="flex min-h-screen flex-col items-center bg-slate-900 p-6 text-white">
       <div className="mb-4 flex items-center gap-4">
         <h1 className="text-2xl font-bold">Deploy Your Units</h1>
-        <Timer durationMs={turnTimerMs} onExpire={handleAutoSubmit} />
+        <Timer key={turnTimerMs} durationMs={turnTimerMs} onExpire={handleAutoSubmit} />
       </div>
 
       <p className="mb-6 text-sm text-slate-400">
@@ -112,6 +122,7 @@ export function DeploymentScreen() {
               return (
                 <button
                   key={idx}
+                  data-testid={`deploy-unit-${i}`}
                   onClick={() => setSelectedClass(uc)}
                   disabled={isPlaced}
                   className={`w-full rounded px-3 py-2 text-left text-sm transition-colors ${
@@ -137,6 +148,8 @@ export function DeploymentScreen() {
         <div className="relative" style={{ width: '600px', height: '500px' }}>
           <h2 className="mb-2 text-sm font-semibold text-slate-400">Spawn Zone</h2>
           <GameCanvas
+            testId="deployment-canvas"
+            autoFit={true}
             cells={cells}
             units={units}
             visibleHexes={spawnZone}
@@ -155,13 +168,17 @@ export function DeploymentScreen() {
 
       {/* Actions */}
       <div className="mt-6 flex gap-3">
-        <Button variant="ghost" onClick={handleUndoLast} disabled={deployments.length === 0}>
+        <Button data-testid="undo-deployment" variant="ghost" onClick={handleUndoLast} disabled={deployments.length === 0}>
           Undo
         </Button>
-        <Button onClick={handleSubmit} disabled={!allPlaced}>
+        <Button data-testid="submit-deployment" onClick={handleSubmit} disabled={!allPlaced}>
           {allPlaced ? 'Deploy!' : `Place ${availableUnits.length - deployments.length} more`}
         </Button>
       </div>
+
+      <pre data-testid="deployment-state" className="hidden">
+        {deploymentSnapshot}
+      </pre>
     </div>
   );
 }

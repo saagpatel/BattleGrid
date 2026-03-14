@@ -1,11 +1,14 @@
 use battleground_core::{
     combat,
+    grid::Terrain,
     hex::Hex,
     los,
-    order::UnitOrder,
+    order::{Action, UnitOrder},
     pathfinding,
-    simulation::GameState,
+    replay::GameReplay,
+    simulation::{GamePhase, GameState, SimEvent},
     types::{PlayerId, UnitId},
+    unit::UnitType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -37,17 +40,16 @@ impl From<HexCoord> for Hex {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoomInfo {
-    pub id: String,
+    pub room_id: String,
     pub player_count: u8,
     pub max_players: u8,
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoomConfig {
     pub max_players: u8,
-    pub turn_timer_ms: u32,
-    pub map_seed: Option<u32>,
+    pub turn_timer_ms: u64,
+    pub map_seed: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,11 +76,11 @@ pub enum ServerMessage {
     },
     DeploymentPhaseStarted {
         spawn_zone: Vec<HexCoord>,
-        time_limit_ms: u32,
+        time_limit_ms: u64,
     },
     PlanningPhaseStarted {
         turn_number: u32,
-        time_limit_ms: u32,
+        time_limit_ms: u64,
     },
     ResolutionStarted {
         events: Vec<u8>,
@@ -89,6 +91,9 @@ pub enum ServerMessage {
     GameOver {
         winner: Option<u8>,
         reason: String,
+    },
+    ReplayData {
+        replay_bytes: Vec<u8>,
     },
     Error {
         message: String,
@@ -114,7 +119,7 @@ pub enum ClientMessage {
     },
     SetReady,
     SubmitDeployment {
-        placements: Vec<(u16, HexCoord)>,
+        placements: Vec<(u16, i32, i32)>,
     },
     SubmitOrders {
         for_turn: u32,
@@ -155,6 +160,68 @@ pub struct CombatPreview {
 pub struct PixelCoord {
     pub x: f64,
     pub y: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ReplaySummary {
+    pub total_turns: usize,
+    pub grid_radius: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClientHexCell {
+    pub coord: HexCoord,
+    pub terrain: String,
+    pub elevation: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClientGridData {
+    pub width: i32,
+    pub height: i32,
+    pub cells: Vec<ClientHexCell>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClientUnitData {
+    pub id: u16,
+    pub owner: u8,
+    pub unit_class: String,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub attack: i32,
+    pub defense: i32,
+    pub move_range: u32,
+    pub attack_range: u32,
+    pub coord: HexCoord,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClientGameState {
+    pub turn: u32,
+    pub phase: String,
+    pub grid: ClientGridData,
+    pub units: Vec<ClientUnitData>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClientSimEvent {
+    pub kind: String,
+    pub unit_id: u16,
+    pub target_unit_id: Option<u16>,
+    pub from: Option<HexCoord>,
+    pub to: Option<HexCoord>,
+    pub damage: Option<i32>,
+    pub heal_amount: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClientTurnOrderInput {
+    pub unit_id: u16,
+    pub order_type: String,
+    pub from: Option<HexCoord>,
+    pub target: Option<HexCoord>,
+    pub target_unit_id: Option<u16>,
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +486,225 @@ pub fn pixel_to_hex_inner(x: f64, y: f64, hex_size: f64) -> HexCoord {
     HexCoord::from(Hex::from_pixel(x, y, hex_size))
 }
 
+fn terrain_name(terrain: Terrain) -> String {
+    match terrain {
+        Terrain::Plains => "Plains",
+        Terrain::Forest => "Forest",
+        Terrain::Mountain => "Mountain",
+        Terrain::Water => "Water",
+        Terrain::Fortress => "Fortress",
+    }
+    .to_string()
+}
+
+fn client_unit_class(unit_type: UnitType) -> String {
+    match unit_type {
+        UnitType::Scout => "scout",
+        UnitType::Soldier => "infantry",
+        UnitType::Archer => "archer",
+        UnitType::Knight => "cavalry",
+        UnitType::Healer => "healer",
+        UnitType::Siege => "siege",
+    }
+    .to_string()
+}
+
+fn game_phase_name(phase: &GamePhase) -> String {
+    match phase {
+        GamePhase::Deploying => "deploying",
+        GamePhase::Planning => "planning",
+        GamePhase::Resolving => "resolving",
+        GamePhase::Finished(_) => "finished",
+    }
+    .to_string()
+}
+
+fn decode_game_state_inner(bytes: &[u8]) -> Result<ClientGameState, String> {
+    let state: GameState =
+        bincode::deserialize(bytes).map_err(|e| format!("Failed to decode game state: {e}"))?;
+
+    let radius = state.grid.radius();
+    let mut cells = Vec::new();
+    for hex in state.grid.all_hexes() {
+        let terrain = state.grid.get_terrain(&hex).unwrap_or(Terrain::Plains);
+        cells.push(ClientHexCell {
+            coord: HexCoord::from(hex),
+            terrain: terrain_name(terrain),
+            elevation: 0,
+        });
+    }
+    cells.sort_by_key(|c| (c.coord.q, c.coord.r));
+
+    let units = state
+        .units
+        .values()
+        .map(|u| ClientUnitData {
+            id: u.id.0,
+            owner: u.owner.0,
+            unit_class: client_unit_class(u.unit_type),
+            hp: u.hp,
+            max_hp: u.max_hp,
+            attack: u.stats().attack,
+            defense: u.stats().defense,
+            move_range: u.stats().movement,
+            attack_range: u.stats().range,
+            coord: HexCoord::from(u.position),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ClientGameState {
+        turn: state.turn,
+        phase: game_phase_name(&state.phase),
+        grid: ClientGridData {
+            width: radius * 2 + 1,
+            height: radius * 2 + 1,
+            cells,
+        },
+        units,
+    })
+}
+
+fn decode_sim_events_inner(bytes: &[u8]) -> Result<Vec<ClientSimEvent>, String> {
+    let events: Vec<SimEvent> =
+        bincode::deserialize(bytes).map_err(|e| format!("Failed to decode sim events: {e}"))?;
+
+    let mapped = events
+        .into_iter()
+        .map(|event| match event {
+            SimEvent::UnitMoved { unit_id, path } => ClientSimEvent {
+                kind: "move".to_string(),
+                unit_id: unit_id.0,
+                target_unit_id: None,
+                from: path.first().copied().map(HexCoord::from),
+                to: path.last().copied().map(HexCoord::from),
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::UnitAttacked {
+                attacker_id,
+                defender_id,
+                damage,
+                ..
+            } => ClientSimEvent {
+                kind: "attack".to_string(),
+                unit_id: attacker_id.0,
+                target_unit_id: Some(defender_id.0),
+                from: None,
+                to: None,
+                damage: Some(damage),
+                heal_amount: None,
+            },
+            SimEvent::UnitDestroyed { unit_id } => ClientSimEvent {
+                kind: "death".to_string(),
+                unit_id: unit_id.0,
+                target_unit_id: None,
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::UnitHealed {
+                healer_id,
+                target_id,
+                amount,
+            } => ClientSimEvent {
+                kind: "heal".to_string(),
+                unit_id: healer_id.0,
+                target_unit_id: Some(target_id.0),
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: Some(amount),
+            },
+            SimEvent::TerrainChanged { hex, .. } => ClientSimEvent {
+                kind: "terrain_change".to_string(),
+                unit_id: 0,
+                target_unit_id: None,
+                from: Some(HexCoord::from(hex)),
+                to: Some(HexCoord::from(hex)),
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::MovementConflict { unit_a, unit_b, .. } => ClientSimEvent {
+                kind: "move".to_string(),
+                unit_id: unit_a.0,
+                target_unit_id: Some(unit_b.0),
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::UnitDefending { unit_id } => ClientSimEvent {
+                kind: "ability".to_string(),
+                unit_id: unit_id.0,
+                target_unit_id: None,
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::FortressCaptured { .. } => ClientSimEvent {
+                kind: "ability".to_string(),
+                unit_id: 0,
+                target_unit_id: None,
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: None,
+            },
+            SimEvent::GameOver { .. } => ClientSimEvent {
+                kind: "ability".to_string(),
+                unit_id: 0,
+                target_unit_id: None,
+                from: None,
+                to: None,
+                damage: None,
+                heal_amount: None,
+            },
+        })
+        .collect();
+
+    Ok(mapped)
+}
+
+fn encode_turn_orders_inner(orders: &[ClientTurnOrderInput]) -> Result<Vec<u8>, String> {
+    let mapped: Vec<UnitOrder> = orders
+        .iter()
+        .map(|order| {
+            let action = match order.order_type.as_str() {
+                "move" => match (order.from.clone(), order.target.clone()) {
+                    (Some(from), Some(target)) => Action::Move {
+                        path: vec![from.into(), target.into()],
+                    },
+                    _ => Action::Hold,
+                },
+                "attack" => order
+                    .target_unit_id
+                    .map(|id| Action::Attack {
+                        target_id: UnitId(id),
+                    })
+                    .unwrap_or(Action::Hold),
+                "ability" => order
+                    .target
+                    .clone()
+                    .map(|target| Action::Ability {
+                        target: target.into(),
+                    })
+                    .unwrap_or(Action::Hold),
+                "defend" => Action::Defend,
+                _ => Action::Hold,
+            };
+
+            UnitOrder {
+                unit_id: UnitId(order.unit_id),
+                action,
+            }
+        })
+        .collect();
+
+    bincode::serialize(&mapped).map_err(|e| format!("Failed to encode turn orders: {e}"))
+}
+
 // ---------------------------------------------------------------------------
 // #[wasm_bindgen] exports — thin wrappers around internal functions
 // ---------------------------------------------------------------------------
@@ -530,6 +816,39 @@ pub fn encode_client_message(msg: JsValue) -> Result<Vec<u8>, JsError> {
     let message: ClientMessage = serde_wasm_bindgen::from_value(msg)
         .map_err(|e| JsError::new(&format!("Failed to parse client message: {e}")))?;
     encode_client_message_inner(&message).map_err(|e| JsError::new(&e))
+}
+
+#[wasm_bindgen]
+pub fn decode_replay_summary(bytes: &[u8]) -> Result<JsValue, JsError> {
+    let replay: GameReplay = bincode::deserialize(bytes)
+        .map_err(|e| JsError::new(&format!("Failed to decode replay data: {e}")))?;
+    let summary = ReplaySummary {
+        total_turns: replay.turn_count(),
+        grid_radius: replay.initial_state.grid.radius(),
+    };
+    serde_wasm_bindgen::to_value(&summary)
+        .map_err(|e| JsError::new(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn decode_game_state(bytes: &[u8]) -> Result<JsValue, JsError> {
+    let state = decode_game_state_inner(bytes).map_err(|e| JsError::new(&e))?;
+    serde_wasm_bindgen::to_value(&state)
+        .map_err(|e| JsError::new(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn decode_sim_events(bytes: &[u8]) -> Result<JsValue, JsError> {
+    let events = decode_sim_events_inner(bytes).map_err(|e| JsError::new(&e))?;
+    serde_wasm_bindgen::to_value(&events)
+        .map_err(|e| JsError::new(&format!("Serialization error: {e}")))
+}
+
+#[wasm_bindgen]
+pub fn encode_turn_orders(orders: JsValue) -> Result<Vec<u8>, JsError> {
+    let parsed: Vec<ClientTurnOrderInput> = serde_wasm_bindgen::from_value(orders)
+        .map_err(|e| JsError::new(&format!("Failed to parse turn orders: {e}")))?;
+    encode_turn_orders_inner(&parsed).map_err(|e| JsError::new(&e))
 }
 
 // ---------------------------------------------------------------------------
@@ -918,10 +1237,9 @@ mod tests {
             },
             ServerMessage::RoomList {
                 rooms: vec![RoomInfo {
-                    id: "room1".to_string(),
+                    room_id: "room1".to_string(),
                     player_count: 1,
                     max_players: 2,
-                    status: "waiting".to_string(),
                 }],
             },
             ServerMessage::Pong,
@@ -960,7 +1278,7 @@ mod tests {
             },
             ClientMessage::SetReady,
             ClientMessage::SubmitDeployment {
-                placements: vec![(1, HexCoord { q: 0, r: 0 }), (2, HexCoord { q: 1, r: 0 })],
+                placements: vec![(1, 0, 0), (2, 1, 0)],
             },
             ClientMessage::SubmitOrders {
                 for_turn: 1,

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -144,3 +147,29 @@ jobs:
           du -sh client/dist/
           echo "JS bundle breakdown:"
           ls -lh client/dist/assets/*.js 2>/dev/null || true
+
+  docker-smoke:
+    name: Docker Smoke
+    runs-on: ubuntu-latest
+    needs: client-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install client dependencies
+        run: pnpm --prefix client install
+
+      - name: Install Playwright Chromium
+        run: pnpm --prefix client exec playwright install --with-deps chromium
+
+      - name: Run Docker smoke
+        run: ./scripts/smoke-docker.sh

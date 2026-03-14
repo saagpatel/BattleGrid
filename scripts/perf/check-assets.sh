@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# codex-os-managed
+max_bytes="${ASSET_MAX_BYTES:-350000}"
+assets_dir=""
+if [[ -d public ]]; then
+  assets_dir="public"
+elif [[ -d client/public ]]; then
+  assets_dir="client/public"
+fi
+
+if [[ -z "$assets_dir" ]]; then
+  echo "No public assets directory found; skipping asset check."
+  exit 0
+fi
+
+fail=0
+while IFS= read -r file; do
+  size=$(wc -c < "$file")
+  if (( size > max_bytes )); then
+    echo "Asset too large (>${max_bytes} bytes): $file"
+    fail=1
+  fi
+done < <(find "$assets_dir" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" -o -name "*.avif" \))
+
+exit $fail

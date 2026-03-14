@@ -9,12 +9,14 @@ const DEFAULT_GRACE_PERIOD_MS: u64 = 30_000;
 ///
 /// When a player disconnects during a game, they get a grace period to
 /// reconnect. If they don't reconnect in time, they forfeit.
+#[allow(dead_code)]
 pub struct DisconnectTracker {
     /// player_id -> disconnect timestamp
     disconnected: HashMap<u8, Instant>,
     grace_period: Duration,
 }
 
+#[allow(dead_code)]
 impl DisconnectTracker {
     pub fn new() -> Self {
         Self {
