@@ -53,8 +53,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: client/pnpm-lock.yaml
       - run: |
           if [[ -f client/lighthouserc.json || -f lighthouserc.json ]]; then
             echo "Lighthouse config detected but no LHCI script is wired for this repo."
@@ -82,8 +80,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: client/pnpm-lock.yaml
       - run: node --expose-gc scripts/perf/memory-smoke.mjs
 
   perf-api:
