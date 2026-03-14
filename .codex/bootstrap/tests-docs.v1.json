@@ -1,0 +1,8 @@
+{
+  "contract": "tests-docs-bootstrap-v1",
+  "adapter": "generic",
+  "branch": "codex/bootstrap-tests-docs-v1",
+  "generated_at": "2026-02-17T05:41:44.292Z",
+  "generated_by": "/Users/d/.codex/scripts/bootstrap/global_tests_docs_bootstrap.mjs",
+  "changed_files": []
+}
