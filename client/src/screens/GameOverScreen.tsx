@@ -59,7 +59,7 @@ export function GameOverScreen() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
+    <div data-testid="game-over-screen" className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
       {/* Winner announcement */}
       <div className="mb-8 text-center">
         {isDraw ? (
