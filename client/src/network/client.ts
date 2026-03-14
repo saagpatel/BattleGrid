@@ -119,6 +119,7 @@ function handleMessage(msg: ServerMessage): void {
       game.setTurn(msg.turn);
       game.setGrid(msg.grid);
       game.setUnits(msg.units);
+      game.setStateBytes(msg.stateBytes);
       if (msg.phase === 'planning') {
         game.setPhase('planning');
       }

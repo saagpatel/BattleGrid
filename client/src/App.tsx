@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useGameStore } from './stores/gameStore.js';
 import { useLobbyStore } from './stores/lobbyStore.js';
 import { useConnectionStore } from './stores/connectionStore.js';
@@ -17,14 +17,66 @@ function App() {
   const phase = useGameStore((s) => s.phase);
   const currentRoom = useLobbyStore((s) => s.currentRoom);
   const status = useConnectionStore((s) => s.status);
+  const [bootstrapState, setBootstrapState] = useState<'loading' | 'ready' | 'failed'>('loading');
 
   useEffect(() => {
-    // Load WASM in background — non-blocking
-    initWasm();
+    let cancelled = false;
 
-    // Connect to game server
-    connect(WS_URL);
+    async function bootstrap() {
+      setBootstrapState('loading');
+
+      const wasmReady = await initWasm();
+      if (cancelled) return;
+
+      if (!wasmReady) {
+        useConnectionStore.getState().disconnect();
+        setBootstrapState('failed');
+        return;
+      }
+
+      setBootstrapState('ready');
+      connect(WS_URL);
+    }
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  if (bootstrapState === 'loading') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="text-center">
+          <div className="mb-4 inline-block h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-t-indigo-500"></div>
+          <h1 className="mb-2 text-3xl font-bold">BattleGrid</h1>
+          <p className="text-slate-400">Loading game engine...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (bootstrapState === 'failed') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="max-w-md text-center">
+          <div className="mb-4 text-6xl">⚠️</div>
+          <h1 className="mb-2 text-3xl font-bold">Game Engine Unavailable</h1>
+          <p className="mb-6 text-slate-400">
+            BattleGrid could not load its WebAssembly engine. Run the repo setup/build flow,
+            then reload the app.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-md bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-700 active:bg-indigo-800"
+          >
+            Retry Load
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Show connection states
   if (status === 'connecting') {

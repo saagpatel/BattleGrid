@@ -52,7 +52,7 @@ export type ServerMessage =
   | { type: 'DeploymentPhaseStarted'; spawnZone: HexCoord[]; timerMs: number }
   | { type: 'PlanningPhaseStarted'; turn: number; timerMs: number }
   | { type: 'ResolutionStarted'; events: SimEvent[] }
-  | { type: 'TurnCompleted'; turn: number; units: UnitData[]; grid: GridData; phase: GamePhase }
+  | { type: 'TurnCompleted'; turn: number; units: UnitData[]; grid: GridData; phase: GamePhase; stateBytes: Uint8Array }
   | { type: 'RoomList'; rooms: RoomInfo[] }
   | { type: 'RoomJoined'; room: RoomDetails }
   | { type: 'RoomUpdated'; room: RoomDetails }
@@ -69,7 +69,7 @@ export type ServerMessage =
 // ---- Messages TO server ----
 
 export type ClientMessage =
-  | { type: 'CreateRoom'; name: string; config: RoomConfig }
+  | { type: 'CreateRoom'; playerName: string; config: RoomConfig }
   | { type: 'JoinRoom'; roomId: string; playerName: string }
   | { type: 'QuickMatch'; playerName: string }
   | { type: 'LeaveRoom' }

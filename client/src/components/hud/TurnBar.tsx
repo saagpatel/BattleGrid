@@ -17,7 +17,7 @@ export function TurnBar({ onSubmitOrders, onAutoSubmit }: TurnBarProps) {
   const status = useConnectionStore((s) => s.status);
 
   return (
-    <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800 px-4 py-2">
+    <div data-testid="turn-bar" className="flex items-center justify-between border-b border-slate-700 bg-slate-800 px-4 py-2">
       <div className="flex items-center gap-4">
         <span className="text-lg font-bold text-white">Turn {turn}</span>
         <PhaseIndicator phase={phase} />
@@ -31,8 +31,8 @@ export function TurnBar({ onSubmitOrders, onAutoSubmit }: TurnBarProps) {
       <div className="flex items-center gap-4">
         {phase === 'planning' && (
           <>
-            <Timer durationMs={turnTimerMs} onExpire={onAutoSubmit} />
-            <Button size="sm" onClick={onSubmitOrders}>
+            <Timer key={turnTimerMs} durationMs={turnTimerMs} onExpire={onAutoSubmit} />
+            <Button data-testid="submit-orders" size="sm" onClick={onSubmitOrders}>
               Submit ({orders.length})
             </Button>
           </>

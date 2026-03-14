@@ -118,7 +118,7 @@ function toWireClientMessage(msg: ClientMessage): WireClientMessage {
         const mapSeed = Number.isFinite(parsedSeed as number) ? parsedSeed : null;
         return {
           CreateRoom: {
-            player_name: msg.name,
+            player_name: msg.playerName,
             config: {
               max_players: msg.config.maxPlayers,
               turn_timer_ms: msg.config.turnTimerMs,
@@ -305,6 +305,7 @@ function normalizeWireServerMessage(wire: WireServerMessage): ServerMessage | nu
             units: state.units,
             grid: state.grid,
             phase: state.phase,
+            stateBytes: bytes,
           };
         }
       }
@@ -314,6 +315,7 @@ function normalizeWireServerMessage(wire: WireServerMessage): ServerMessage | nu
         units: [],
         grid: { width: 0, height: 0, cells: [] },
         phase: 'planning',
+        stateBytes: bytes,
       };
     }
     case 'GameOver':

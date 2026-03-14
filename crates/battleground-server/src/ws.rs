@@ -545,8 +545,12 @@ async fn handle_deployment_complete(
         .game
         .as_ref()
         .ok_or_else(|| ServerError::internal("game not initialized"))?;
+    let state_bytes = game.serialize_state()?;
     let turn = game.turn();
     let timer_ms = game.turn_timer_ms;
+
+    let state_msg = ServerMessage::TurnCompleted { state: state_bytes };
+    let _ = room.broadcast(&state_msg).await;
 
     let msg = ServerMessage::PlanningPhaseStarted {
         turn_number: turn,
@@ -624,7 +628,9 @@ mod tests {
     use crate::protocol::{ClientMessage, RoomConfig, ServerMessage, PROTOCOL_VERSION};
     use futures_util::{SinkExt, StreamExt};
     use tokio::net::TcpListener;
-    use tokio_tungstenite::{connect_async, tungstenite::Message as TsMsg};
+    use tokio_tungstenite::{
+        connect_async, tungstenite::Message as TsMsg, MaybeTlsStream, WebSocketStream,
+    };
 
     /// Start a test server on an ephemeral port. Returns the WS URL.
     async fn start_test_server() -> String {
@@ -654,6 +660,34 @@ mod tests {
         assert!(!bytes.is_empty(), "empty server message");
         assert_eq!(bytes[0], PROTOCOL_VERSION, "wrong protocol version");
         bincode::deserialize(&bytes[1..]).expect("deserialize server message")
+    }
+
+    async fn recv_server_message(
+        ws: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    ) -> ServerMessage {
+        loop {
+            match ws.next().await.expect("server message").expect("socket ok") {
+                TsMsg::Binary(bytes) => return decode_server(&bytes),
+                TsMsg::Text(_) | TsMsg::Ping(_) | TsMsg::Pong(_) => continue,
+                other => panic!("unexpected websocket message: {other:?}"),
+            }
+        }
+    }
+
+    async fn recv_until<F>(
+        ws: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+        predicate: F,
+    ) -> ServerMessage
+    where
+        F: Fn(&ServerMessage) -> bool,
+    {
+        for _ in 0..20 {
+            let msg = recv_server_message(ws).await;
+            if predicate(&msg) {
+                return msg;
+            }
+        }
+        panic!("did not receive expected server message within limit");
     }
 
     #[tokio::test]
@@ -811,5 +845,130 @@ mod tests {
             }
             other => panic!("Expected Error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn ws_deployment_completion_broadcasts_initial_turn_state() {
+        let url = start_test_server().await;
+
+        let (mut ws1, _) = connect_async(&url).await.expect("connect p1");
+        ws1.send(TsMsg::Binary(
+            encode_client(&ClientMessage::CreateRoom {
+                player_name: "Alice".to_string(),
+                config: RoomConfig::default(),
+            })
+            .into(),
+        ))
+        .await
+        .expect("create room");
+
+        let room_id = match recv_server_message(&mut ws1).await {
+            ServerMessage::RoomCreated { room_id } => room_id,
+            other => panic!("expected RoomCreated, got {other:?}"),
+        };
+        let _ = recv_server_message(&mut ws1).await;
+
+        let (mut ws2, _) = connect_async(&url).await.expect("connect p2");
+        ws2.send(TsMsg::Binary(
+            encode_client(&ClientMessage::JoinRoom {
+                room_id: room_id.clone(),
+                player_name: "Bob".to_string(),
+            })
+            .into(),
+        ))
+        .await
+        .expect("join room");
+
+        let _ = recv_until(&mut ws2, |msg| {
+            matches!(msg, ServerMessage::RoomJoined { .. })
+        })
+        .await;
+
+        let ready = encode_client(&ClientMessage::SetReady);
+        ws1.send(TsMsg::Binary(ready.clone().into()))
+            .await
+            .expect("ready p1");
+        ws2.send(TsMsg::Binary(ready.into()))
+            .await
+            .expect("ready p2");
+
+        let spawn_zone_1 = match recv_until(&mut ws1, |msg| {
+            matches!(msg, ServerMessage::DeploymentPhaseStarted { .. })
+        })
+        .await
+        {
+            ServerMessage::DeploymentPhaseStarted { spawn_zone, .. } => spawn_zone,
+            other => panic!("expected DeploymentPhaseStarted, got {other:?}"),
+        };
+        let spawn_zone_2 = match recv_until(&mut ws2, |msg| {
+            matches!(msg, ServerMessage::DeploymentPhaseStarted { .. })
+        })
+        .await
+        {
+            ServerMessage::DeploymentPhaseStarted { spawn_zone, .. } => spawn_zone,
+            other => panic!("expected DeploymentPhaseStarted, got {other:?}"),
+        };
+
+        let placements_1: Vec<(u16, i32, i32)> = spawn_zone_1
+            .into_iter()
+            .take(10)
+            .enumerate()
+            .map(|(idx, (q, r))| (idx as u16, q, r))
+            .collect();
+        let placements_2: Vec<(u16, i32, i32)> = spawn_zone_2
+            .into_iter()
+            .take(10)
+            .enumerate()
+            .map(|(idx, (q, r))| (idx as u16, q, r))
+            .collect();
+
+        ws1.send(TsMsg::Binary(
+            encode_client(&ClientMessage::SubmitDeployment {
+                placements: placements_1,
+            })
+            .into(),
+        ))
+        .await
+        .expect("deploy p1");
+        ws2.send(TsMsg::Binary(
+            encode_client(&ClientMessage::SubmitDeployment {
+                placements: placements_2,
+            })
+            .into(),
+        ))
+        .await
+        .expect("deploy p2");
+
+        let mut saw_turn_completed = false;
+        let mut saw_planning_started = false;
+        for _ in 0..10 {
+            match recv_server_message(&mut ws1).await {
+                ServerMessage::TurnCompleted { state } => {
+                    saw_turn_completed = true;
+                    assert!(
+                        !state.is_empty(),
+                        "initial planning state should be non-empty"
+                    );
+                }
+                ServerMessage::PlanningPhaseStarted { turn_number, .. } => {
+                    saw_planning_started = true;
+                    assert_eq!(turn_number, 1);
+                }
+                _ => {}
+            }
+
+            if saw_turn_completed && saw_planning_started {
+                break;
+            }
+        }
+
+        assert!(
+            saw_turn_completed,
+            "expected initial TurnCompleted broadcast"
+        );
+        assert!(
+            saw_planning_started,
+            "expected PlanningPhaseStarted after deployment"
+        );
     }
 }

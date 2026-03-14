@@ -31,6 +31,8 @@ impl TurnTimer {
     /// when the deadline passes (unless cancelled first).
     pub fn start(&mut self) -> TurnTimerHandle {
         self.deadline = Instant::now() + self.duration;
+        self.cancel = Arc::new(Notify::new());
+        self.expired = Arc::new(Notify::new());
         let cancel = self.cancel.clone();
         let expired = self.expired.clone();
         let deadline = self.deadline;

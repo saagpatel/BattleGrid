@@ -7,6 +7,7 @@ import { AnimationEngine } from '../renderer/AnimationEngine.js';
 import { queueSimEvents } from '../renderer/eventAnimator.js';
 import { useWasmGame } from '../wasm/useWasmGame.js';
 import { TurnBar } from '../components/hud/TurnBar.js';
+import { UnitPicker } from '../components/hud/UnitPicker.js';
 import { UnitPanel } from '../components/hud/UnitPanel.js';
 import { ScoreBoard } from '../components/hud/ScoreBoard.js';
 import { OrderList } from '../components/hud/OrderList.js';
@@ -30,6 +31,7 @@ export function GameScreen() {
   const playerId = useGameStore((s) => s.playerId);
   const spawnZone = useGameStore((s) => s.spawnZone);
   const events = useGameStore((s) => s.events);
+  const stateBytes = useGameStore((s) => s.stateBytes);
   const addOrder = useGameStore((s) => s.addOrder);
   const clearOrders = useGameStore((s) => s.clearOrders);
 
@@ -66,6 +68,12 @@ export function GameScreen() {
       return () => clearTimeout(timer);
     }
   }, [events, units, turn]);
+
+  useEffect(() => {
+    if (stateBytes) {
+      wasmGame.updateState(stateBytes);
+    }
+  }, [stateBytes, wasmGame]);
 
   // Convert grid cells to renderer format
   const cells: HexCell[] = useMemo(() => {
@@ -165,6 +173,69 @@ export function GameScreen() {
     };
   }, [selectedUnitId, hoveredHex, phase, units, playerId, wasmGame]);
 
+  const smokeMoveCandidate = useMemo(() => {
+    if (phase !== 'planning' || playerId === null) return null;
+
+    const occupied = new Set(
+      [...units.values()].map((unit) => `${unit.coord.q},${unit.coord.r}`),
+    );
+
+    return [...units.values()]
+      .filter((unit) => unit.owner === playerId && unit.hp > 0)
+      .sort((a, b) => a.id - b.id)
+      .map((unit) => {
+        const target = wasmGame
+          .getReachableHexes(unit.id)
+          .find(
+            (hex) =>
+              !(hex.q === unit.coord.q && hex.r === unit.coord.r) &&
+              !occupied.has(`${hex.q},${hex.r}`),
+          );
+
+        if (!target) return null;
+
+        return {
+          unitId: unit.id,
+          from: unit.coord,
+          to: target,
+        };
+      })
+      .find(Boolean);
+  }, [phase, playerId, units, wasmGame]);
+
+  const gameSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        phase,
+        turn,
+        playerId,
+        selectedUnitId,
+        moveRangeHexes,
+        attackRangeHexes,
+        smokeMoveCandidate,
+        orders,
+        units: [...units.values()]
+          .map((unit) => ({
+            id: unit.id,
+            owner: unit.owner,
+            hp: unit.hp,
+            coord: unit.coord,
+          }))
+          .sort((a, b) => a.id - b.id),
+      }),
+    [
+      phase,
+      turn,
+      playerId,
+      selectedUnitId,
+      moveRangeHexes,
+      attackRangeHexes,
+      smokeMoveCandidate,
+      orders,
+      units,
+    ],
+  );
+
   // Input is disabled during resolving phase and while animations play
   const inputDisabled = phase === 'resolving' || phase === 'finished' || isAnimating;
 
@@ -253,7 +324,7 @@ export function GameScreen() {
   }, [phase, orders, isAnimating, showHelp, selectUnit, handleSubmitOrders]);
 
   return (
-    <div className="flex h-screen flex-col bg-slate-900 text-white">
+    <div data-testid="game-screen" className="flex h-screen flex-col bg-slate-900 text-white">
       {/* Top bar */}
       <TurnBar onSubmitOrders={handleSubmitOrders} onAutoSubmit={handleAutoSubmit} />
 
@@ -292,6 +363,7 @@ export function GameScreen() {
         )}
 
         {/* HUD overlays */}
+        <UnitPicker />
         <UnitPanel />
         <ScoreBoard />
         <OrderList />
@@ -320,6 +392,10 @@ export function GameScreen() {
 
       {/* Help overlay */}
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+
+      <pre data-testid="game-state" className="hidden">
+        {gameSnapshot}
+      </pre>
     </div>
   );
 }

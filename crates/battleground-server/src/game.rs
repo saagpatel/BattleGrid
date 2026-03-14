@@ -283,6 +283,12 @@ impl GameInstance {
             .collect();
 
         self.deployments.insert(pid, placements);
+
+        // Auto-deploy should fully advance the game once every player has a deployment.
+        if self.deployments.len() == self.player_count && self.state.phase == GamePhase::Deploying {
+            self.apply_deployments()
+                .expect("auto-deploy placements should always be valid");
+        }
     }
 }
 
@@ -476,5 +482,16 @@ mod tests {
         game.auto_deploy(0);
         game.auto_deploy(0); // second call should be a no-op
         assert_eq!(game.deployments.len(), 1);
+    }
+
+    #[test]
+    fn auto_deploy_transitions_to_planning_when_all_players_timeout() {
+        let mut game = GameInstance::new(&player_names(), 30_000, Some(42));
+        game.auto_deploy(0);
+        game.auto_deploy(1);
+
+        assert_eq!(*game.phase(), GamePhase::Planning);
+        assert_eq!(game.turn(), 1);
+        assert!(!game.state.units.is_empty());
     }
 }

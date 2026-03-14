@@ -47,6 +47,29 @@ describe('codec', () => {
     expect(encoded).toBeInstanceOf(ArrayBuffer);
   });
 
+  it('maps create-room player names into the wire protocol', () => {
+    wasmEnabled = true;
+    wasmMock.encode_client_message.mockReturnValue(new Uint8Array([1, 2, 3]));
+
+    const msg: ClientMessage = {
+      type: 'CreateRoom',
+      playerName: 'Alice',
+      config: { turnTimerMs: 15000, maxPlayers: 2, mapSeed: null },
+    };
+    encodeMessage(msg);
+
+    expect(wasmMock.encode_client_message).toHaveBeenCalledWith({
+      CreateRoom: {
+        player_name: 'Alice',
+        config: {
+          max_players: 2,
+          turn_timer_ms: 15000,
+          map_seed: null,
+        },
+      },
+    });
+  });
+
   it('decodes a JSON string server message', () => {
     const msg: ServerMessage = { type: 'RoomList', rooms: [] };
     const decoded = decodeMessage(JSON.stringify(msg));
