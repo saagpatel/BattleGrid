@@ -25,11 +25,7 @@ pub fn has_line_of_sight(grid: &HexGrid, from: Hex, to: Hex) -> bool {
             if let Some(terrain) = grid.get_terrain(&hex) {
                 match terrain {
                     Terrain::Mountain => return false,
-                    Terrain::Forest => {
-                        if !viewer_in_forest {
-                            return false;
-                        }
-                    }
+                    Terrain::Forest if !viewer_in_forest => return false,
                     _ => {}
                 }
             }
@@ -122,6 +118,14 @@ mod tests {
         grid.set_terrain(Hex::ORIGIN, Terrain::Forest);
         grid.set_terrain(Hex::new(1, 0), Terrain::Forest);
         // Viewer IN forest → can see through forest
+        assert!(has_line_of_sight(&grid, Hex::ORIGIN, Hex::new(2, 0)));
+    }
+
+    #[test]
+    fn los_not_blocked_by_passable_non_forest_terrain() {
+        let mut grid = HexGrid::new(5);
+        grid.set_terrain(Hex::new(1, 0), Terrain::Fortress);
+
         assert!(has_line_of_sight(&grid, Hex::ORIGIN, Hex::new(2, 0)));
     }
 
