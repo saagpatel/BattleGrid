@@ -25,11 +25,7 @@ pub fn has_line_of_sight(grid: &HexGrid, from: Hex, to: Hex) -> bool {
             if let Some(terrain) = grid.get_terrain(&hex) {
                 match terrain {
                     Terrain::Mountain => return false,
-                    Terrain::Forest => {
-                        if !viewer_in_forest {
-                            return false;
-                        }
-                    }
+                    Terrain::Forest if !viewer_in_forest => return false,
                     _ => {}
                 }
             }
