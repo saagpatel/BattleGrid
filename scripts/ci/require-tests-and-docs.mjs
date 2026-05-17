@@ -22,6 +22,7 @@ const isProdCode = (file) =>
 
 const isTest = (file) =>
   /^tests\//.test(file) ||
+  /^crates\/[^/]+\/tests\//.test(file) ||
   /^client\/e2e\//.test(file) ||
   /^client\/src\/__tests__\//.test(file) ||
   /\.(test|spec)\.[cm]?[jt]sx?$/.test(file);

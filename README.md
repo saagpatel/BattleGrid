@@ -12,6 +12,7 @@ BattleGrid is a real-time multiplayer hex strategy game where every decision hap
 - **6 unit classes** — Scout (fast, reveals fog), Soldier (fortress specialist), Archer (3-range, no counter), Knight (charge bonus), Healer (pre-combat heal), Siege (destroys terrain)
 - **Procedural maps** — noise-based hex terrain with rotational symmetry; four presets or custom seeds
 - **WASM game core** — pathfinding, line-of-sight raycasting, and combat preview run in the browser via WASM for instant feedback without server round-trips
+- **Terrain-aware visibility** — mountains and outside forests block sight, while fortress and plains lanes stay readable
 - **Deterministic replay** — `BTreeMap` throughout, zero `HashMap` iteration in game logic; same inputs always produce identical output
 - **Reconnect support** — drop and rejoin mid-game; the Axum server replays the full state to reconnecting clients
 
