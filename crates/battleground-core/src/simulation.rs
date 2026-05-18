@@ -1281,24 +1281,24 @@ mod tests {
         for _ in 0..5.min(left.len()) {
             let mut hex;
             loop {
-                hex = left[rng.gen_range(0..left.len())];
+                hex = left[rng.random_range(0..left.len())];
                 if !used_left.contains(&hex) {
                     break;
                 }
             }
             used_left.insert(hex);
-            state.place_unit(types[rng.gen_range(0..types.len())], PlayerId(0), hex);
+            state.place_unit(types[rng.random_range(0..types.len())], PlayerId(0), hex);
         }
         for _ in 0..5.min(right.len()) {
             let mut hex;
             loop {
-                hex = right[rng.gen_range(0..right.len())];
+                hex = right[rng.random_range(0..right.len())];
                 if !used_right.contains(&hex) {
                     break;
                 }
             }
             used_right.insert(hex);
-            state.place_unit(types[rng.gen_range(0..types.len())], PlayerId(1), hex);
+            state.place_unit(types[rng.random_range(0..types.len())], PlayerId(1), hex);
         }
     }
 
@@ -1311,7 +1311,7 @@ mod tests {
         for player in &state.players {
             let mut orders = Vec::new();
             for unit in state.units_for_player(player.id) {
-                let action = match rng.gen_range(0..3) {
+                let action = match rng.random_range(0..3) {
                     0 => Action::Hold,
                     1 => Action::Defend,
                     _ => {
@@ -1325,7 +1325,7 @@ mod tests {
                         if passable.is_empty() {
                             Action::Hold
                         } else {
-                            let target = passable[rng.gen_range(0..passable.len())];
+                            let target = passable[rng.random_range(0..passable.len())];
                             Action::Move {
                                 path: vec![unit.position, target],
                             }
