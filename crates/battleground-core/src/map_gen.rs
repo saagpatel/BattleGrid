@@ -274,7 +274,7 @@ fn generate_noise_field(
 
     // Seed each hex with a random base value
     for hex in hexes {
-        raw.insert(*hex, rng.gen::<f64>());
+        raw.insert(*hex, rng.random::<f64>());
     }
 
     // Smooth by averaging with neighbors (2 passes for organic clustering)
@@ -355,7 +355,7 @@ fn place_terrain_noise(
 
     // Shuffle the pool to add randomness within high-scoring candidates
     for i in (1..pool.len()).rev() {
-        let j = rng.gen_range(0..=i);
+        let j = rng.random_range(0..=i);
         pool.swap(i, j);
     }
 
