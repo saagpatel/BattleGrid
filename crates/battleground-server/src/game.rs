@@ -34,7 +34,7 @@ impl GameInstance {
     pub fn new(player_names: &[(u8, String)], turn_timer_ms: u64, map_seed: Option<u64>) -> Self {
         let seed = map_seed.unwrap_or_else(|| {
             use rand::Rng;
-            rand::thread_rng().gen()
+            rand::rng().random()
         });
 
         let map_config = MapGenConfig::default();

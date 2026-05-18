@@ -8,10 +8,10 @@ use crate::state::AppState;
 /// Generate a 6-character alphanumeric room code.
 pub fn generate_room_code() -> String {
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I to avoid confusion
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..6)
         .map(|_| {
-            let idx = rng.gen_range(0..CHARS.len());
+            let idx = rng.random_range(0..CHARS.len());
             CHARS[idx] as char
         })
         .collect()
