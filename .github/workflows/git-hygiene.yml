@@ -7,7 +7,7 @@ on:
 
 jobs:
   commitlint:
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,7 +27,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   branch-name:
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/') }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
