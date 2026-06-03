@@ -72,6 +72,39 @@ Open two browser tabs. Create a room in one, join with the room code in the othe
 
 The Rust monorepo has three crates: `battleground-core` (pure game logic, no I/O), `battleground-wasm` (thin WASM bindings over core), and `battleground-server` (Axum WebSocket server). The browser client loads the WASM module at startup and calls it synchronously for pathfinding previews and combat previews — no server round-trip needed for local feedback. When a player submits orders, the server collects both players' orders, runs the authoritative core simulation, and broadcasts the resolved state. Bincode over WebSocket keeps payloads small and deserialization fast.
 
+## Current State
+
+Feature-complete and in maintenance. The core game — 6 unit classes, procedural hex
+maps, simultaneous resolution, WASM-side pathfinding/combat previews, deterministic
+replay, and mid-game reconnect — is implemented across the `battleground-core`,
+`battleground-wasm`, and `battleground-server` crates plus the React client, with
+`cargo test` + Vitest + Playwright coverage, Docker packaging, an OpenAPI spec, and full
+CI. Recent work has been dependency and CI hygiene (a `rand` API migration, a
+`tokio-tungstenite` bump, Dependabot group updates) rather than new gameplay.
+
+## Known Risks
+
+- **Shared-core version skew** — the browser runs `battleground-wasm` for pathfinding and
+  combat previews while the server resolves orders with the same `battleground-core`
+  authoritatively. If the WASM build drifts from the server's core version, client
+  previews diverge from the resolved state.
+- **Determinism is load-bearing** — replay and reconnect depend on `BTreeMap` everywhere
+  and zero `HashMap` iteration in game logic. Any `HashMap` introduced into the simulation
+  path silently breaks deterministic replay.
+- **Versioned binary wire protocol** — Bincode over WebSocket is compact but
+  schema-sensitive; a server/client protocol-version mismatch breaks the session rather
+  than degrading gracefully.
+- **Server-side room lifetime** — rooms persist for mid-game reconnect; there is no
+  documented room-cleanup or reconnection-storm bound.
+
+## Next Recommended Move
+
+Confirm the recent `rand` and `tokio-tungstenite` migrations did not perturb the
+deterministic simulation: run `make test` (Rust workspace + client) and `make smoke`
+(Playwright), and spot-check a replay. Then settle disposition — if the game is considered
+shipped, cut a tagged release from `main`; if development resumes, the next gameplay
+milestone (e.g. matchmaking or spectating) is the natural pickup.
+
 ## License
 
 MIT
