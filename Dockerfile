@@ -25,7 +25,7 @@ FROM node:20-slim AS client-builder
 RUN npm install -g pnpm@9
 
 WORKDIR /app/client
-COPY client/package.json client/pnpm-lock.yaml* ./
+COPY client/package.json client/pnpm-lock.yaml* client/pnpm-workspace.yaml* ./
 
 RUN pnpm install --frozen-lockfile || pnpm install
 

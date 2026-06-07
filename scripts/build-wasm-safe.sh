@@ -23,4 +23,9 @@ CARGO_TARGET_DIR_DEFAULT="${TMPDIR:-/tmp}/battlegrid-wasm-target"
 if [[ -z "${CARGO_TARGET_DIR:-}" || "${CARGO_TARGET_DIR}" == *:* ]]; then
   export CARGO_TARGET_DIR="$CARGO_TARGET_DIR_DEFAULT"
 fi
+
+if [[ -d "$HOME/.cargo/bin" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
 wasm-pack build crates/battleground-wasm --target web --out-dir ../../client/src/wasm/pkg
