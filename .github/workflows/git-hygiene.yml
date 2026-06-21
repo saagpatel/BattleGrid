@@ -5,6 +5,9 @@ on:
     types: [opened, synchronize, reopened, edited]
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   git-hygiene:
     uses: saagpatel/sovereign/.github/workflows/git-hygiene.yml@main
