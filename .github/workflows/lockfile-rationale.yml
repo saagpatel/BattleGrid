@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+permissions:
+  contents: read
+
 jobs:
   lockfile-rationale:
     uses: saagpatel/sovereign/.github/workflows/lockfile-rationale.yml@main
