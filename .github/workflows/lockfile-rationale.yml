@@ -4,22 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+permissions:
+  contents: read
+
 jobs:
-  enforce:
-    if: ${{ github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: tj-actions/changed-files@48d8f15b2aaa3d255ca5af3eba4870f807ce6b3c
-        id: changed
-      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        if: contains(steps.changed.outputs.all_changed_files, 'pnpm-lock.yaml') || contains(steps.changed.outputs.all_changed_files, 'package-lock.json') || contains(steps.changed.outputs.all_changed_files, 'yarn.lock')
-        with:
-          script: |
-            const body = (context.payload.pull_request?.body || "");
-            if (!/## Lockfile rationale/i.test(body)) {
-              core.setFailed("Lockfile changed but PR body lacks 'Lockfile rationale' section.");
-            }
+  lockfile-rationale:
+    uses: saagpatel/sovereign/.github/workflows/lockfile-rationale.yml@main
+    secrets: inherit
