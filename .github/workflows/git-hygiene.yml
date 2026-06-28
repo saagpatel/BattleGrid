@@ -4,11 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
     branches: [main, master]
-
-permissions:
-  contents: read
+  workflow_dispatch:
 
 jobs:
   git-hygiene:
-    uses: saagpatel/sovereign/.github/workflows/git-hygiene.yml@main
-    secrets: inherit
+    uses: saagpatel/sovereign/.github/workflows/git-hygiene.yml@fdd225434bc1185911e53f8df1834ac058949580
