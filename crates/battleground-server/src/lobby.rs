@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use crate::error::ServerError;
 use crate::protocol::{RoomConfig, RoomInfo};

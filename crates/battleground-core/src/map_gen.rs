@@ -1,7 +1,7 @@
 use crate::grid::{HexGrid, Terrain};
 use crate::hex::Hex;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 

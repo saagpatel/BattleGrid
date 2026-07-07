@@ -33,7 +33,7 @@ impl GameInstance {
     /// Create a new game instance, generating the map and setting up player states.
     pub fn new(player_names: &[(u8, String)], turn_timer_ms: u64, map_seed: Option<u64>) -> Self {
         let seed = map_seed.unwrap_or_else(|| {
-            use rand::Rng;
+            use rand::RngExt;
             rand::rng().random()
         });
 
