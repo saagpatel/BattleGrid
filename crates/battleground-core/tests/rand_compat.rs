@@ -20,7 +20,7 @@ fn terrain_signature(grid: &HexGrid, config: &MapGenConfig) -> Vec<(Hex, Terrain
 }
 
 #[test]
-fn rand_09_map_generation_remains_seed_deterministic() {
+fn rand_010_map_generation_remains_seed_deterministic() {
     let config = MapGenConfig {
         radius: 4,
         ..MapGenConfig::default()

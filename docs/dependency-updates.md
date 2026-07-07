@@ -12,3 +12,10 @@ Keep the seeded map-generation coverage in place when touching `rand`,
 `getrandom`, or the terrain generation path. It verifies that seeded
 generation remains deterministic and that different seeds still produce
 different terrain layouts.
+
+## Rand 0.10 API Imports
+
+The `rand` 0.10 update keeps seeded generation deterministic but moves the
+`random` and `random_range` extension methods behind `rand::RngExt`. Keep
+runtime and test imports on `RngExt` when using those methods so clippy,
+workspace tests, and WASM-oriented builds all resolve the same APIs.

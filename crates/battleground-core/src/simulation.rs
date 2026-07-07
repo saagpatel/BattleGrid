@@ -649,7 +649,7 @@ mod tests {
     use super::*;
     use crate::order::UnitOrder;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use std::time::Instant;
 
     fn test_state() -> GameState {
