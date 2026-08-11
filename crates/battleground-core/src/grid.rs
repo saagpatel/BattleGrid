@@ -109,6 +109,13 @@ impl HexGrid {
         self.cells.keys().copied().collect()
     }
 
+    /// All hexes in canonical coordinate order.
+    pub fn all_hexes_sorted(&self) -> Vec<Hex> {
+        let mut hexes = self.all_hexes();
+        hexes.sort();
+        hexes
+    }
+
     /// All passable hexes.
     pub fn passable_hexes(&self) -> Vec<Hex> {
         self.cells

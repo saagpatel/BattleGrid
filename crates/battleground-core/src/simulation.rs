@@ -106,6 +106,35 @@ pub enum SimEvent {
     },
 }
 
+/// Stable machine-readable reasons returned by strict order validation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderValidationCode {
+    UnitMissing,
+    UnitDead,
+    OwnerMismatch,
+    PathTooShort,
+    PathStartMismatch,
+    PathOutsideGrid,
+    PathNotAdjacent,
+    PathImpassable,
+    PathCostExceeded,
+    TargetMissing,
+    TargetFriendly,
+    TargetOutOfRange,
+    AbilityMissing,
+    AbilityOutOfRange,
+    AbilityTargetInvalid,
+    DeployNotAllowed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderValidationError {
+    pub unit_id: UnitId,
+    pub code: OrderValidationCode,
+    pub message: String,
+}
+
 /// Ruling R10: BTreeMap everywhere for determinism.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -146,6 +175,18 @@ impl GameState {
         id
     }
 
+    /// Insert a fixture unit with an explicit stable ID and safely advance allocation.
+    pub fn place_unit_with_id(&mut self, unit: Unit) -> Result<(), String> {
+        if self.units.contains_key(&unit.id) {
+            return Err(format!("duplicate unit id {}", unit.id.0));
+        }
+        self.next_unit_id = self
+            .next_unit_id
+            .max(unit.id.0.checked_add(1).ok_or("unit id space exhausted")?);
+        self.units.insert(unit.id, unit);
+        Ok(())
+    }
+
     pub fn units_for_player(&self, player_id: PlayerId) -> Vec<&Unit> {
         self.units
             .values()
@@ -182,6 +223,24 @@ impl GameState {
 pub fn simulate_turn(
     state: &mut GameState,
     all_orders: &BTreeMap<PlayerId, Vec<UnitOrder>>,
+) -> Vec<SimEvent> {
+    simulate_turn_with_terminal_policy(state, all_orders, true)
+}
+
+/// Resolve one deterministic tick without applying multiplayer terminal policy.
+///
+/// Puzzle sessions call this only after strict validation of both sides.
+pub fn simulate_puzzle_turn(
+    state: &mut GameState,
+    all_orders: &BTreeMap<PlayerId, Vec<UnitOrder>>,
+) -> Vec<SimEvent> {
+    simulate_turn_with_terminal_policy(state, all_orders, false)
+}
+
+fn simulate_turn_with_terminal_policy(
+    state: &mut GameState,
+    all_orders: &BTreeMap<PlayerId, Vec<UnitOrder>>,
+    apply_standard_terminal_policy: bool,
 ) -> Vec<SimEvent> {
     let mut events = Vec::new();
 
@@ -239,7 +298,9 @@ pub fn simulate_turn(
     update_fortress_control(state, &mut events);
 
     // Step 8: Check win conditions
-    check_win_conditions(state, &mut events);
+    if apply_standard_terminal_policy {
+        check_win_conditions(state, &mut events);
+    }
 
     // Step 9: Increment turn, reset per-turn state
     if !matches!(state.phase, GamePhase::Finished(_)) {
@@ -254,6 +315,180 @@ pub fn simulate_turn(
     events
 }
 
+fn validation_error(
+    unit_id: UnitId,
+    code: OrderValidationCode,
+    message: impl Into<String>,
+) -> OrderValidationError {
+    OrderValidationError {
+        unit_id,
+        code,
+        message: message.into(),
+    }
+}
+
+/// Shared authoritative validator used by multiplayer fallback handling,
+/// puzzle commit rejection, and WASM previews.
+pub fn validate_unit_order(
+    state: &GameState,
+    expected_owner: Option<PlayerId>,
+    order: &UnitOrder,
+) -> Result<(), OrderValidationError> {
+    let unit = state.units.get(&order.unit_id).ok_or_else(|| {
+        validation_error(
+            order.unit_id,
+            OrderValidationCode::UnitMissing,
+            "unit does not exist",
+        )
+    })?;
+    if !unit.is_alive() {
+        return Err(validation_error(
+            order.unit_id,
+            OrderValidationCode::UnitDead,
+            "unit is not alive",
+        ));
+    }
+    if expected_owner.is_some_and(|owner| owner != unit.owner) {
+        return Err(validation_error(
+            order.unit_id,
+            OrderValidationCode::OwnerMismatch,
+            "unit is not owned by the submitting player",
+        ));
+    }
+
+    match &order.action {
+        Action::Move { path } => {
+            if path.len() < 2 {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathTooShort,
+                    "movement path must include a start and destination",
+                ));
+            }
+            if path.first() != Some(&unit.position) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathStartMismatch,
+                    "movement path does not start at the unit",
+                ));
+            }
+            if !path.iter().all(|hex| state.grid.contains(hex)) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathOutsideGrid,
+                    "movement path leaves the grid",
+                ));
+            }
+            if !path.windows(2).all(|step| step[0].distance(&step[1]) == 1) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathNotAdjacent,
+                    "movement path contains a non-adjacent step",
+                ));
+            }
+            if !path[1..].iter().all(|hex| state.grid.is_passable(hex)) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathImpassable,
+                    "movement path crosses impassable terrain",
+                ));
+            }
+            if pathfinding::path_cost(&state.grid, path) > unit.movement() {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::PathCostExceeded,
+                    "movement path exceeds the unit movement budget",
+                ));
+            }
+        }
+        Action::Attack { target_id } => {
+            let target = state.units.get(target_id).ok_or_else(|| {
+                validation_error(
+                    order.unit_id,
+                    OrderValidationCode::TargetMissing,
+                    "attack target does not exist",
+                )
+            })?;
+            if !target.is_alive() {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::TargetMissing,
+                    "attack target is not alive",
+                ));
+            }
+            if target.owner == unit.owner {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::TargetFriendly,
+                    "attack target is friendly",
+                ));
+            }
+            if !unit.can_attack_at_range(unit.position.distance(&target.position)) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::TargetOutOfRange,
+                    "attack target is outside unit range",
+                ));
+            }
+        }
+        Action::Ability { target } => {
+            let ability = unit.stats().ability.ok_or_else(|| {
+                validation_error(
+                    order.unit_id,
+                    OrderValidationCode::AbilityMissing,
+                    "unit has no active ability",
+                )
+            })?;
+            if !state.grid.contains(target) {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::AbilityTargetInvalid,
+                    "ability target is outside the grid",
+                ));
+            }
+            if unit.position.distance(target) > unit.range() {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::AbilityOutOfRange,
+                    "ability target is outside unit range",
+                ));
+            }
+            let target_valid = match ability {
+                Ability::Demolish => matches!(
+                    state.grid.get_terrain(target),
+                    Some(Terrain::Forest | Terrain::Fortress)
+                ),
+                Ability::Heal => state.units.values().any(|candidate| {
+                    candidate.position == *target
+                        && candidate.owner == unit.owner
+                        && candidate.id != unit.id
+                        && candidate.is_alive()
+                        && candidate.hp < candidate.max_hp
+                }),
+                Ability::Reveal => true,
+                Ability::Charge => false,
+            };
+            if !target_valid {
+                return Err(validation_error(
+                    order.unit_id,
+                    OrderValidationCode::AbilityTargetInvalid,
+                    "ability cannot affect the selected target",
+                ));
+            }
+        }
+        Action::Defend | Action::Hold => {}
+        Action::Deploy { .. } => {
+            return Err(validation_error(
+                order.unit_id,
+                OrderValidationCode::DeployNotAllowed,
+                "deploy orders are not valid during resolution",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_orders(
     state: &GameState,
     orders: &BTreeMap<UnitId, Action>,
@@ -261,38 +496,18 @@ fn validate_orders(
     let mut validated = BTreeMap::new();
 
     for (&uid, action) in orders {
-        let unit = match state.units.get(&uid) {
-            Some(u) if u.is_alive() => u,
-            _ => continue,
-        };
-
-        let valid = match action {
-            Action::Move { path } => {
-                // Path must start at unit's current position, all hexes valid,
-                // each step adjacent, and total cost within movement range.
-                path.first() == Some(&unit.position)
-                    && path.len() >= 2
-                    && path.iter().all(|h| state.grid.contains(h))
-                    && path.windows(2).all(|w| w[0].distance(&w[1]) == 1)
-                    && pathfinding::path_cost(&state.grid, path) <= unit.movement()
-            }
-            Action::Attack { target_id } => {
-                if let Some(target) = state.units.get(target_id) {
-                    target.is_alive()
-                        && target.owner != unit.owner
-                        && unit.can_attack_at_range(unit.position.distance(&target.position))
-                } else {
-                    false
-                }
-            }
-            Action::Ability { target } => {
-                unit.stats().ability.is_some() && state.grid.contains(target)
-            }
-            Action::Defend | Action::Hold => true,
-            Action::Deploy { .. } => false, // Deploy not valid during normal turns
-        };
-
-        validated.insert(uid, if valid { action.clone() } else { Action::Hold });
+        if !state.units.contains_key(&uid) {
+            continue;
+        }
+        let order = UnitOrder::new(uid, action.clone());
+        validated.insert(
+            uid,
+            if validate_unit_order(state, None, &order).is_ok() {
+                action.clone()
+            } else {
+                Action::Hold
+            },
+        );
     }
 
     validated
@@ -799,8 +1014,12 @@ mod tests {
         let u2 = state.place_unit(UnitType::Scout, PlayerId(1), Hex::new(1, 0));
 
         // Reduce HP to 1 each
-        state.units.get_mut(&u1).map(|u| u.hp = 1);
-        state.units.get_mut(&u2).map(|u| u.hp = 1);
+        if let Some(unit) = state.units.get_mut(&u1) {
+            unit.hp = 1;
+        }
+        if let Some(unit) = state.units.get_mut(&u2) {
+            unit.hp = 1;
+        }
 
         let mut orders = BTreeMap::new();
         orders.insert(PlayerId(0), vec![UnitOrder::attack(u1, u2)]);
@@ -890,7 +1109,9 @@ mod tests {
         let enemy = state.place_unit(UnitType::Soldier, PlayerId(1), Hex::new(1, 0));
 
         // Damage soldier to 2 HP
-        state.units.get_mut(&soldier).map(|u| u.hp = 2);
+        if let Some(unit) = state.units.get_mut(&soldier) {
+            unit.hp = 2;
+        }
 
         let mut orders = BTreeMap::new();
         orders.insert(
@@ -935,7 +1156,9 @@ mod tests {
     fn unit_death_removal() {
         let mut state = test_state();
         let uid = state.place_unit(UnitType::Scout, PlayerId(0), Hex::new(0, 0));
-        state.units.get_mut(&uid).map(|u| u.hp = 0);
+        if let Some(unit) = state.units.get_mut(&uid) {
+            unit.hp = 0;
+        }
 
         simulate_turn(&mut state, &no_orders());
         assert!(!state.units.contains_key(&uid));
@@ -1109,7 +1332,9 @@ mod tests {
         let u2 = state.place_unit(UnitType::Scout, PlayerId(1), Hex::new(1, 0));
 
         // Kill player 1's only unit
-        state.units.get_mut(&u2).map(|u| u.hp = 0);
+        if let Some(unit) = state.units.get_mut(&u2) {
+            unit.hp = 0;
+        }
 
         let events = simulate_turn(&mut state, &no_orders());
         assert!(matches!(
@@ -1235,11 +1460,11 @@ mod tests {
         let left: Vec<&Hex> = passable.iter().filter(|h| h.q < -2).collect();
         let right: Vec<&Hex> = passable.iter().filter(|h| h.q > 2).collect();
 
-        for i in 0..20.min(left.len()) {
-            state.place_unit(UnitType::Soldier, PlayerId(0), *left[i]);
+        for hex in left.iter().take(20) {
+            state.place_unit(UnitType::Soldier, PlayerId(0), **hex);
         }
-        for i in 0..20.min(right.len()) {
-            state.place_unit(UnitType::Soldier, PlayerId(1), *right[i]);
+        for hex in right.iter().take(20) {
+            state.place_unit(UnitType::Soldier, PlayerId(1), **hex);
         }
 
         // Time the simulation of one turn

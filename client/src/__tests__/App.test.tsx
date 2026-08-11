@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import App from '../App.js';
+import App from '../MultiplayerApp.js';
 import { useConnectionStore } from '../stores/connectionStore.js';
 import { useLobbyStore } from '../stores/lobbyStore.js';
 import { useGameStore } from '../stores/gameStore.js';
@@ -42,7 +42,7 @@ vi.mock('../components/Toast.js', () => ({
   ToastContainer: () => null,
 }));
 
-describe('App', () => {
+describe('MultiplayerApp', () => {
   beforeEach(() => {
     mocks.initWasm.mockReset();
     mocks.connect.mockReset();

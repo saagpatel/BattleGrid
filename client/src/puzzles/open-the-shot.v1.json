@@ -1,0 +1,73 @@
+{
+  "format_version": 1,
+  "puzzle_id": "open-the-shot",
+  "engine_compatibility": {
+    "ruleset_id": "battlegrid-simultaneous",
+    "engine_contract_version": "puzzle-session-v1",
+    "ruleset_digest": "cac6e7ddaa402943ca52b7a541a1075f68ed59af34cf39d5a19041db68571966"
+  },
+  "metadata": {
+    "title": "Open the Shot",
+    "briefing": "A forest blocks your Archer's line of sight. Queue the Siege demolition and the allied shot in the same plan.",
+    "learning_goal": "Use ability-before-combat ordering to open a blocked attack.",
+    "difficulty": "Tactical",
+    "enemy_intent": "Enemy Scout 3 will hold position behind the forest.",
+    "hints": ["Abilities resolve before combat, even though every order is committed together."]
+  },
+  "grid_radius":2,
+  "terrain":[
+    {"coord":{"q":-2,"r":0},"terrain":"Mountain"},
+    {"coord":{"q":-2,"r":1},"terrain":"Plains"},
+    {"coord":{"q":-2,"r":2},"terrain":"Forest"},
+    {"coord":{"q":-1,"r":-1},"terrain":"Plains"},
+    {"coord":{"q":-1,"r":0},"terrain":"Plains"},
+    {"coord":{"q":-1,"r":1},"terrain":"Plains"},
+    {"coord":{"q":-1,"r":2},"terrain":"Plains"},
+    {"coord":{"q":0,"r":-2},"terrain":"Forest"},
+    {"coord":{"q":0,"r":-1},"terrain":"Plains"},
+    {"coord":{"q":0,"r":0},"terrain":"Plains"},
+    {"coord":{"q":0,"r":1},"terrain":"Plains"},
+    {"coord":{"q":0,"r":2},"terrain":"Mountain"},
+    {"coord":{"q":1,"r":-2},"terrain":"Plains"},
+    {"coord":{"q":1,"r":-1},"terrain":"Plains"},
+    {"coord":{"q":1,"r":0},"terrain":"Forest"},
+    {"coord":{"q":1,"r":1},"terrain":"Plains"},
+    {"coord":{"q":2,"r":-2},"terrain":"Forest"},
+    {"coord":{"q":2,"r":-1},"terrain":"Plains"},
+    {"coord":{"q":2,"r":0},"terrain":"Plains"}
+  ],
+  "players":[
+    {"id":0,"name":"You","side":"player","spawn_center":{"q":0,"r":0}},
+    {"id":1,"name":"Red Line","side":"opponent","spawn_center":{"q":2,"r":0}}
+  ],
+  "player_side":0,
+  "units":[
+    {"id":1,"owner":0,"unit_type":"Siege","coord":{"q":0,"r":1},"hp":4},
+    {"id":2,"owner":0,"unit_type":"Archer","coord":{"q":0,"r":0},"hp":3},
+    {"id":3,"owner":1,"unit_type":"Scout","coord":{"q":2,"r":0},"hp":2}
+  ],
+  "opponent_orders":{
+    "1":[{"unit_id":3,"action":{"kind":"hold"}}]
+  },
+  "objective":{"kind":"unit_destroyed","unit_id":3},
+  "failure_conditions":[],
+  "turn_limit":1,
+  "constraints":{
+    "permitted_units":[1,2],
+    "permitted_order_kinds":["attack","ability"],
+    "required_order_count":2
+  },
+  "challenge_conditions":[],
+  "reference_solution":{
+    "1":[
+      {"unit_id":1,"action":{"kind":"ability","target":{"q":1,"r":0}}},
+      {"unit_id":2,"action":{"kind":"attack","target_id":3}}
+    ]
+  },
+  "expected_digests":{
+    "gameplay_definition":"f5da5dd839821fd0d6548f394650da895942edba46566f08211cc3a663f62513",
+    "initial_state":"7b6106bcd62a327fa0b78ee97e5083359de5a2ce1244a59aa6e066c75bdcbec1",
+    "reference_trace":"dda4778cd30eca9dd05af4b09e0e9be9ea9d6a58c481c831b295d3e41505690e"
+  },
+  "generator_provenance":null
+}

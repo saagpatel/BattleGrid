@@ -6,6 +6,7 @@ pub mod los;
 pub mod map_gen;
 pub mod order;
 pub mod pathfinding;
+pub mod puzzle;
 pub mod replay;
 pub mod simulation;
 pub mod types;

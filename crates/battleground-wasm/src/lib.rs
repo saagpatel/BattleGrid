@@ -5,8 +5,9 @@ use battleground_core::{
     los,
     order::{Action, UnitOrder},
     pathfinding,
+    puzzle::{LegalPuzzleOrder, PuzzleError, PuzzleReplayFrame, PuzzleSession},
     replay::GameReplay,
-    simulation::{GamePhase, GameState, SimEvent},
+    simulation::{validate_unit_order, GamePhase, GameState, SimEvent},
     types::{PlayerId, UnitId},
     unit::UnitType,
 };
@@ -224,6 +225,26 @@ pub struct ClientTurnOrderInput {
     pub target_unit_id: Option<u16>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PuzzleValidationResponse {
+    pub valid: bool,
+    pub error: Option<PuzzleError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PuzzleCommitResponse {
+    pub ok: bool,
+    pub frame: Option<PuzzleReplayFrame>,
+    pub error: Option<PuzzleError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PuzzleDigestView {
+    pub gameplay_definition: String,
+    pub initial_state: String,
+    pub trace: String,
+}
+
 // ---------------------------------------------------------------------------
 // Internal (non-WASM) logic — returns Result<T, String> for testability
 // ---------------------------------------------------------------------------
@@ -345,45 +366,7 @@ impl GameBridge {
     pub fn validate_order(&self, order_bytes: &[u8], player_id: u8) -> Result<bool, String> {
         let order: UnitOrder = bincode::deserialize(order_bytes)
             .map_err(|e| format!("Failed to deserialize order: {e}"))?;
-
-        let pid = PlayerId(player_id);
-
-        let unit = match self.state.units.get(&order.unit_id) {
-            Some(u) if u.is_alive() && u.owner == pid => u,
-            _ => return Ok(false),
-        };
-
-        let valid = match &order.action {
-            battleground_core::order::Action::Move { path } => {
-                path.first() == Some(&unit.position)
-                    && path.len() >= 2
-                    && path.iter().all(|h| self.state.grid.contains(h))
-            }
-            battleground_core::order::Action::Attack { target_id } => {
-                match self.state.units.get(target_id) {
-                    Some(target) => {
-                        target.is_alive()
-                            && target.owner != unit.owner
-                            && unit.can_attack_at_range(unit.position.distance(&target.position))
-                    }
-                    None => false,
-                }
-            }
-            battleground_core::order::Action::Ability { target } => {
-                unit.stats().ability.is_some() && self.state.grid.contains(target)
-            }
-            battleground_core::order::Action::Defend | battleground_core::order::Action::Hold => {
-                true
-            }
-            battleground_core::order::Action::Deploy { .. } => {
-                matches!(
-                    self.state.phase,
-                    battleground_core::simulation::GamePhase::Deploying
-                )
-            }
-        };
-
-        Ok(valid)
+        Ok(validate_unit_order(&self.state, Some(PlayerId(player_id)), &order).is_ok())
     }
 
     pub fn preview_combat(
@@ -712,6 +695,167 @@ fn encode_turn_orders_inner(orders: &[ClientTurnOrderInput]) -> Result<Vec<u8>, 
 #[wasm_bindgen]
 pub struct WasmGame {
     bridge: GameBridge,
+}
+
+/// Stateful solo-puzzle bridge. All rules and replay state remain in Rust.
+#[wasm_bindgen]
+pub struct WasmPuzzleSession {
+    session: PuzzleSession,
+}
+
+#[wasm_bindgen]
+impl WasmPuzzleSession {
+    #[wasm_bindgen(constructor)]
+    pub fn new(definition_json: &str) -> Result<WasmPuzzleSession, JsError> {
+        let session = PuzzleSession::from_json(definition_json)
+            .map_err(|error| JsError::new(&error.message))?;
+        Ok(Self { session })
+    }
+
+    pub fn definition(&self) -> Result<JsValue, JsError> {
+        serde_wasm_bindgen::to_value(self.session.definition())
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn compatibility(&self) -> Result<JsValue, JsError> {
+        serde_wasm_bindgen::to_value(self.session.compatibility())
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn digests(&self) -> Result<JsValue, JsError> {
+        let view = PuzzleDigestView {
+            gameplay_definition: self.session.gameplay_definition_digest().to_string(),
+            initial_state: self.session.initial_state_digest().to_string(),
+            trace: self
+                .session
+                .trace_digest()
+                .map_err(|error| JsError::new(&error.message))?,
+        };
+        serde_wasm_bindgen::to_value(&view)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn current_state(&self) -> Result<JsValue, JsError> {
+        serde_wasm_bindgen::to_value(&self.session.current_state())
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn player_units(&self) -> Result<JsValue, JsError> {
+        let player_side = self.session.definition().player_side;
+        let units = self
+            .session
+            .current_state()
+            .units
+            .into_iter()
+            .filter(|unit| unit.owner == player_side)
+            .collect::<Vec<_>>();
+        serde_wasm_bindgen::to_value(&units)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn legal_orders(&self, unit_id: u16) -> Result<JsValue, JsError> {
+        let orders = self
+            .session
+            .legal_orders(UnitId(unit_id))
+            .map_err(|error| JsError::new(&error.message))?;
+        serde_wasm_bindgen::to_value(&orders)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn preview_order(&self, order: JsValue) -> Result<JsValue, JsError> {
+        let legal: LegalPuzzleOrder = serde_wasm_bindgen::from_value(order)
+            .map_err(|error| JsError::new(&format!("Invalid order input: {error}")))?;
+        let preview = self
+            .session
+            .preview_order(&legal.to_core())
+            .map_err(|error| JsError::new(&error.message))?;
+        serde_wasm_bindgen::to_value(&preview)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn queue_order(&mut self, order: JsValue) -> Result<JsValue, JsError> {
+        let legal: LegalPuzzleOrder = serde_wasm_bindgen::from_value(order)
+            .map_err(|error| JsError::new(&format!("Invalid order input: {error}")))?;
+        let response = match self.session.queue_order(legal.to_core()) {
+            Ok(()) => PuzzleValidationResponse {
+                valid: true,
+                error: None,
+            },
+            Err(error) => PuzzleValidationResponse {
+                valid: false,
+                error: Some(error),
+            },
+        };
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn remove_order(&mut self, unit_id: u16) -> bool {
+        self.session.remove_order(UnitId(unit_id))
+    }
+
+    pub fn queued_orders(&self) -> Result<JsValue, JsError> {
+        serde_wasm_bindgen::to_value(&self.session.queued_orders())
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn validate_commit(&self) -> Result<JsValue, JsError> {
+        let response = match self.session.validate_commit() {
+            Ok(()) => PuzzleValidationResponse {
+                valid: true,
+                error: None,
+            },
+            Err(error) => PuzzleValidationResponse {
+                valid: false,
+                error: Some(error),
+            },
+        };
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn commit(&mut self) -> Result<JsValue, JsError> {
+        let response = match self.session.commit() {
+            Ok(frame) => PuzzleCommitResponse {
+                ok: true,
+                frame: Some(frame.clone()),
+                error: None,
+            },
+            Err(error) => PuzzleCommitResponse {
+                ok: false,
+                frame: None,
+                error: Some(error),
+            },
+        };
+        serde_wasm_bindgen::to_value(&response)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn result(&self) -> Result<JsValue, JsError> {
+        serde_wasm_bindgen::to_value(self.session.result())
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn replay_frame(&self, index: usize) -> Result<JsValue, JsError> {
+        let frame = self
+            .session
+            .replay_frame(index)
+            .map_err(|error| JsError::new(&error.message))?;
+        serde_wasm_bindgen::to_value(frame)
+            .map_err(|error| JsError::new(&format!("Serialization error: {error}")))
+    }
+
+    pub fn replay_frame_count(&self) -> usize {
+        self.session.frames().len()
+    }
+
+    pub fn reset(&mut self) -> Result<(), JsError> {
+        self.session = self
+            .session
+            .reset()
+            .map_err(|error| JsError::new(&error.message))?;
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]
