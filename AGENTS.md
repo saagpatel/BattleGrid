@@ -12,7 +12,7 @@
 
 - Inherit global git, review/fix, testing, docs, skill-use, and reporting gates from `~/.codex/AGENTS.md` and active session instructions.
 - Use `.codex/verify.commands` and `.codex/scripts/run_verify_commands.sh` as this repo-local verification authority when present.
-- Keep the Codex feature policy and portfolio constraints below as repo-local overrides.
+- Keep the Codex feature policy below as repo-local overrides.
 
 ## Codex Feature Policy
 - Required path (release-critical): stable commands and stable settings only.
