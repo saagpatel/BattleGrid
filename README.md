@@ -4,17 +4,17 @@
 
 > No turn advantage, no peeking at opponent moves — both players plan simultaneously, then every order resolves in a single explosive tick
 
-BattleGrid is a real-time multiplayer hex strategy game where every decision happens simultaneously. Two players issue orders to all their units during a timed planning phase. When the timer expires, movement, abilities, and combat resolve in parallel. The entire game engine is Rust compiled to WASM — deterministic simulation, instant pathfinding previews, and a shared core between server and browser.
+BattleGrid is a real-time multiplayer hex strategy game where both players plan simultaneously. Two players issue orders to all their units during a timed planning phase. When both players submit or the timer expires, movement resolves first, then abilities, then simultaneous combat. The game engine is Rust compiled to WASM — shared simulation, instant pathfinding previews, and a shared core between server and browser.
 
 ## Features
 
-- **Simultaneous resolution** — both players plan in secret; all orders execute at the same instant with no turn-order advantage
-- **6 unit classes** — Scout (fast, reveals fog), Soldier (fortress specialist), Archer (3-range, no counter), Knight (charge bonus), Healer (pre-combat heal), Siege (destroys terrain)
-- **Procedural maps** — noise-based hex terrain with rotational symmetry; four presets or custom seeds
+- **Simultaneous resolution** — both players plan in secret; orders resolve in one tick with movement and abilities before simultaneous combat
+- **6 unit classes** — Scout (fast), Soldier (fortress specialist), Archer (3-range, melee penalty), Knight (charge bonus), Healer (pre-combat heal), Siege (destroys terrain)
+- **Procedural maps** — noise-based hex terrain with rotational symmetry; five presets in the core API, with the server using the default configuration and optional custom seeds
 - **WASM game core** — pathfinding, line-of-sight raycasting, and combat preview run in the browser via WASM for instant feedback without server round-trips
 - **Terrain-aware visibility** — mountains and outside forests block sight, while fortress and plains lanes stay readable
-- **Deterministic replay** — `BTreeMap` throughout, zero `HashMap` iteration in game logic; same inputs always produce identical output
-- **Reconnect support** — drop and rejoin mid-game; the Axum server replays the full state to reconnecting clients
+- **Replay recording** — initial state and turn orders are stored; server recordings currently capture the initial state before deployment, so they cannot reconstruct deployed matches
+- **Connection retry** — the client retries dropped WebSockets; active-game disconnects are tracked, but room rejoin and state restoration are not implemented
 
 ## Quick Start
 
@@ -48,8 +48,10 @@ locked client dependencies explicitly:
 make build-wasm
 ```
 
-The WASM build generates ignored `client/src/wasm/pkg`; typecheck and client
-build need it. CI installs wasm-pack 0.13.1. Choose the smallest lane for the
+The WASM build generates ignored `client/src/wasm/pkg`; the app requires it at
+runtime and shows an error if it cannot load. The main CI workflow installs
+wasm-pack unpinned; the quality-gates workflow and the Dockerfile pin 0.13.1.
+Choose the smallest lane for the
 change:
 
 ```bash
@@ -116,11 +118,11 @@ The Rust monorepo has three crates: `battleground-core` (pure game logic, no I/O
 
 ## Current State
 
-Feature-complete and in maintenance. The core game — 6 unit classes, procedural hex
-maps, simultaneous resolution, WASM-side pathfinding/combat previews, deterministic
-replay, and mid-game reconnect — is implemented across the `battleground-core`,
+In maintenance. The core game — 6 unit classes, procedural hex
+maps, simultaneous resolution, WASM-side pathfinding/combat previews,
+replay recording, and connection retry — is implemented across the `battleground-core`,
 `battleground-wasm`, and `battleground-server` crates plus the React client, with
-`cargo test` + Vitest + Playwright coverage, Docker packaging, an OpenAPI spec, and full
+`cargo test` + Vitest + Playwright coverage, Docker packaging, an empty OpenAPI placeholder, and full
 CI. Recent work has been dependency and CI hygiene (a `rand` API migration, a
 `tokio-tungstenite` bump, Dependabot group updates) rather than new gameplay.
 
@@ -130,14 +132,13 @@ CI. Recent work has been dependency and CI hygiene (a `rand` API migration, a
   combat previews while the server resolves orders with the same `battleground-core`
   authoritatively. If the WASM build drifts from the server's core version, client
   previews diverge from the resolved state.
-- **Determinism is load-bearing** — replay and reconnect depend on `BTreeMap` everywhere
-  and zero `HashMap` iteration in game logic. Any `HashMap` introduced into the simulation
-  path silently breaks deterministic replay.
+- **Determinism is load-bearing** — units and orders use `BTreeMap`, but the grid and
+  pathfinding use `HashMap`; fortress enumeration iterates the grid during simulation.
+  Identical output ordering is not guaranteed by ordered units and orders alone.
 - **Versioned binary wire protocol** — Bincode over WebSocket is compact but
-  schema-sensitive; a server/client protocol-version mismatch breaks the session rather
-  than degrading gracefully.
-- **Server-side room lifetime** — rooms persist for mid-game reconnect; there is no
-  documented room-cleanup or reconnection-storm bound.
+  schema-sensitive; mismatched protocol-version messages are rejected with an error.
+- **Server-side room lifetime** — empty waiting rooms are removed, but active-game
+  disconnects retain players and rooms without a wired grace-period expiry or state restoration.
 
 ## Next Recommended Move
 
@@ -145,7 +146,7 @@ Confirm the recent `rand` and `tokio-tungstenite` migrations did not perturb the
 deterministic simulation: run `make test` (Rust workspace + client) and `make smoke`
 (Playwright), and spot-check a replay. Then settle disposition — if the game is considered
 shipped, cut a tagged release from `main`; if development resumes, the next gameplay
-milestone (e.g. matchmaking or spectating) is the natural pickup.
+milestone (e.g. spectating) is the natural pickup.
 
 ## License
 
