@@ -24,7 +24,9 @@ BattleGrid is a real-time multiplayer hex strategy game where every decision hap
   ```bash
   cargo install wasm-pack
   ```
-- Node.js 18+ with pnpm
+- Node.js 24 with pnpm 9 (the versions used by CI)
+- Rust `rustfmt` and `clippy` components and the `wasm32-unknown-unknown` target
+  (`rustup component add rustfmt clippy`; `rustup target add wasm32-unknown-unknown`)
 - Docker + Docker Compose (optional, for zero-install server)
 
 ### Installation
@@ -34,6 +36,46 @@ git clone https://github.com/saagpatel/BattleGrid.git
 cd BattleGrid
 ./setup.sh
 ```
+
+### Verification
+
+Run commands from the repository root. `./setup.sh` may install Rust, wasm-pack,
+global pnpm and Chromium; for an already provisioned toolchain, install the
+locked client dependencies explicitly:
+
+```bash
+./scripts/pnpm-safe.sh --prefix client install --frozen-lockfile
+make build-wasm
+```
+
+The WASM build generates ignored `client/src/wasm/pkg`; typecheck and client
+build need it. CI installs wasm-pack 0.13.1. Choose the smallest lane for the
+change:
+
+```bash
+# Focused Rust test (replace the filter with the affected test name)
+./scripts/cargo-safe.sh test -p battleground-core test_name
+# Focused client test (replace the path with the affected test file)
+./scripts/client-safe.sh vitest run src/path/to.test.ts
+# Broader Rust workspace and client unit tests
+make test
+# Format, lint, typecheck and build; all canonical gates are listed here
+cat .codex/verify.commands
+```
+
+`make verify` runs that [canonical manifest](.codex/verify.commands), including
+Rust fmt/clippy/tests, client typecheck/lint/tests/build and Playwright. It writes
+`.codex/verify.last.json` (override with `VERIFY_RESULTS_FILE`). This is the
+broader integration lane, not needed for a pure documentation edit.
+
+For changed UI, browser behavior or Rust/WASM interaction, install Chromium with
+`./scripts/client-safe.sh playwright install chromium` and run `make smoke`.
+On Linux, browser system libraries must also be installed (CI uses
+`playwright install --with-deps chromium`). Playwright starts `make dev` on
+localhost ports 3001/5173 and can reuse an existing server; use an isolated
+checkout and ensure those ports are free so the result exercises your source.
+`make smoke-docker` additionally requires Docker/Compose and creates containers.
+Do not use cleanup targets as verification commands.
 
 ### Usage
 
