@@ -6,6 +6,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   git-hygiene:
-    uses: saagpatel/sovereign/.github/workflows/git-hygiene.yml@fdd225434bc1185911e53f8df1834ac058949580
+    uses: saagpatel/sovereign/.github/workflows/git-hygiene.yml@fdd225434bc1185911e53f8df1834ac058949580 # pinned commit fdd2254

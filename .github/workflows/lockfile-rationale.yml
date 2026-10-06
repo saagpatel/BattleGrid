@@ -5,6 +5,9 @@ on:
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   enforce:
-    uses: saagpatel/sovereign/.github/workflows/lockfile-rationale.yml@fdd225434bc1185911e53f8df1834ac058949580
+    uses: saagpatel/sovereign/.github/workflows/lockfile-rationale.yml@fdd225434bc1185911e53f8df1834ac058949580 # pinned commit fdd2254
